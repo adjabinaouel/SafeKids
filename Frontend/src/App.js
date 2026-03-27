@@ -1,0 +1,47 @@
+import React, { useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import LoginPage            from './pages/common/LoginPage/LoginPage';
+import SignupPage           from './pages/common/SignupPage/SignupPage';
+import FeedbackScreen       from './pages/parents/FeedbackScreen/FeedbackScreen';
+import ActivitiesScreen     from './pages/parents/ActivitiesScreen/ActivitiesScreen';
+import ActivityPlayerScreen from './pages/parents/ActivityPlayerScreen/ActivityPlayerScreen';
+import PremiumScreen        from './pages/parents/PremiumScreen/PremiumScreen';
+import ProfileScreen        from './pages/parents/ProfileScreen/ProfileScreen';
+import SettingsScreen       from './pages/parents/ProfileScreen/SettingsSecreen'; 
+import HomeScreen           from './pages/parents/HomeScreen/HomeScreen';
+
+const Stack = createNativeStackNavigator();
+
+export default function App() {
+  const [isPremium, setIsPremium] = useState(false);
+
+  const ActivitiesWithPremium = (props) => (
+    <ActivitiesScreen {...props} isPremium={isPremium} />
+  );
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          screenOptions={{ headerShown: false }}
+          initialRouteName="Home"
+        >
+          <Stack.Screen name="Login"          component={LoginPage} />
+          <Stack.Screen name="Signup"         component={SignupPage} />
+          <Stack.Screen name="Activities"     component={ActivitiesWithPremium} />
+          <Stack.Screen name="ActivityPlayer" component={ActivityPlayerScreen} />
+          <Stack.Screen name="Feedback"       component={FeedbackScreen} />
+          <Stack.Screen name="Profile"        component={ProfileScreen} />
+          <Stack.Screen name="Settings"       component={SettingsScreen} />
+          <Stack.Screen name="Home"           component={HomeScreen} />
+          <Stack.Screen name="Premium"        component={(props) => (
+            <PremiumScreen {...props} onPremiumActivated={() => setIsPremium(true)} />
+          )} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}

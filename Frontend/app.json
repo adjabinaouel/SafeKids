@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "SafeKids",
+    "slug": "Frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "SafeKids utilise la caméra pour votre photo de profil.",
+        "NSPhotoLibraryUsageDescription": "SafeKids accède à vos photos pour votre photo de profil.",
+        "NSPhotoLibraryAddUsageDescription": "SafeKids enregistre vos photos de profil dans votre galerie.",
+        "NSFaceIDUsageDescription": "SafeKids utilise Face ID pour sécuriser votre compte."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.emmanaouel.Frontend",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SafeKids accède à vos photos pour personnaliser votre profil.",
+          "cameraPermission": "SafeKids utilise la caméra pour prendre votre photo de profil.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "SafeKids utilise Face ID pour sécuriser votre compte."
+        }
+      ]
+    ]
+  }
+}
