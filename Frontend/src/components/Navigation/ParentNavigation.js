@@ -17,9 +17,10 @@ const TABS = [
   { key: 'home',       icon: 'home',      label: 'Accueil'     },
   { key: 'activities', icon: 'grid',       label: 'Activités'   },
   { key: 'Notifications',   icon: 'bell',label: 'Notifications'     },
-  { key: 'mes-enfantes',   icon: 'users',   label: 'Mes Enfantes'    },
+  { key: 'MesEnfants',   icon: 'users',   label: 'Mes Enfantes'    },
   { key: 'profile',    icon: 'user',       label: 'Profil'      },
-  { key: 'annuaire-medecale', icon: 'map-pin', label: 'Annuaire Médical' }
+  { key: 'annuaire-medecale', icon: 'map-pin', label: 'Annuaire Médical' },
+  { key: 'Messages'           ,icon:'message-circle',                  label:'Messages'}
 ];
 
 // ── Bottom Nav Item (Mobile) ──────────────────────────────────────────────────
