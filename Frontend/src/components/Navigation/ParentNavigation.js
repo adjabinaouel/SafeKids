@@ -16,11 +16,11 @@ const IS_TABLET = width >= 768;
 const TABS = [
   { key: 'home',       icon: 'home',      label: 'Accueil'     },
   { key: 'activities', icon: 'grid',       label: 'Activités'   },
-  { key: 'Notifications',   icon: 'bell',label: 'Notifications'     },
-  { key: 'MesEnfants',   icon: 'users',   label: 'Mes Enfantes'    },
+  { key: 'notifications',   icon: 'bell',label: 'Notifications'     },
+  { key: 'mesEnfants',   icon: 'users',   label: 'Mes Enfantes'    },
   { key: 'profile',    icon: 'user',       label: 'Profil'      },
   { key: 'annuaire-medecale', icon: 'map-pin', label: 'Annuaire Médical' },
-  { key: 'Messages'           ,icon:'message-circle',                  label:'Messages'}
+  { key: 'messages'           ,icon:'message-circle',                  label:'Messages'}
 ];
 
 // ── Bottom Nav Item (Mobile) ──────────────────────────────────────────────────
@@ -121,6 +121,10 @@ const ParentLayout = ({ children, activeTab }) => {
       progress:   'Progress',
       schedule:   'Schedule',
       profile:    'Profile',
+      notifications: 'Notifications',
+      mesEnfants: 'Children',
+      annuaireMedecale:'AnnuaireMedecale',
+      messages: 'Messages',
     };
     navigation.navigate(screenMap[key]);
   };

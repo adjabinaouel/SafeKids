@@ -10,11 +10,11 @@ import ActivitiesScreen     from './pages/parents/ActivitiesScreen/ActivitiesScr
 import ActivityPlayerScreen from './pages/parents/ActivityPlayerScreen/ActivityPlayerScreen';
 import PremiumScreen        from './pages/parents/PremiumScreen/PremiumScreen';
 import ProfileScreen        from './pages/parents/ProfileScreen/ProfileScreen';
-import SettingsScreen       from './pages/parents/ProfileScreen/SettingsSecreen'; 
+import SettingsScreen       from './pages/parents/ProfileScreen/SettingsScreen'; 
 import HomeScreen           from './pages/parents/HomeScreen/HomeScreen';
-import NotificationsScreen  from './pages/parents/NotificationScreen/NotificationScreen';
-import MesEnfants           from './pages/parents/MesEnfantsScreen/MesEnfantsScreen';
-import MessagesScreen        from './pages/parents/MessagesScreen/MessagesScreen';
+import NotificationScreen from './pages/parents/NotificationScreen/NotificationScreen';
+import ChildrenScreen      from './pages/parents/ChildrenScreen/ChildrenScreen';
+import MessagesScreen      from './pages/parents/MessagesScreen/MessagesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -40,9 +40,10 @@ export default function App() {
           <Stack.Screen name="Profile"        component={ProfileScreen} />
           <Stack.Screen name="Settings"       component={SettingsScreen} />
           <Stack.Screen name="Home"           component={HomeScreen} />
-          <Stack.Screen name='Notifications'  component={NotificationsScreen} />
-          <Stack.Screen name="MesEnfants"    component={MesEnfants} />
+          <Stack.Screen name='Notifications'  component={NotificationScreen}/>
+          <Stack.Screen name="Children"       component={ChildrenScreen} />
           <Stack.Screen name="Messages"       component={MessagesScreen} />
+          
           <Stack.Screen name="Premium"        component={(props) => (
             <PremiumScreen {...props} onPremiumActivated={() => setIsPremium(true)} />
           )} />

@@ -10,6 +10,7 @@ export const COLORS = {
   primary:       '#7C3AED',
   primaryDark:   '#5B21B6',
   primaryLight:  '#EDE9FE',
+  primaryMid:    '#EDE9FE',
   primaryGlow:   '#DDD6FE',
 
   // Surfaces
@@ -42,7 +43,7 @@ export const COLORS = {
 
 export const SHADOWS = {
   sm: Platform.select({
-    ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+    ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8  },
     android: { elevation: 2 },
   }),
   md: Platform.select({
@@ -55,7 +56,6 @@ export const SHADOWS = {
   }),
 };
 
-// ─── SHARED RADIUS ─────────────────────────────────────────────────────────────
 const RADIUS = {
   sm:  8,
   md:  12,
@@ -64,7 +64,7 @@ const RADIUS = {
   xxl: 24,
 };
 
-// ─── STYLES ────────────────────────────────────────────────────────────────────
+// ─── STYLES ───────────────────────────────────────────────────────────────────
 export default StyleSheet.create({
 
   // ── Layout ────────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ export default StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── ProfileScreen — Animated wrapper ─────────────────────────────────────
+  // ── ProfileScreen — Animated wrapper ──────────────────────────────────────
   animatedContent: {
     flex: 1,
   },
@@ -127,7 +127,6 @@ export default StyleSheet.create({
     marginBottom: 14,
   },
 
-  // ✅ Fix caméra : conteneur position:relative avec dimensions exactes du cercle
   avatarWrapper: {
     width: 108,
     height: 108,
@@ -140,7 +139,10 @@ export default StyleSheet.create({
     borderRadius: 54,
     justifyContent: 'center',
     alignItems: 'center',
-    ...SHADOWS.lg,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 24 },
+      android: { elevation: 12 },
+    }),
   },
 
   avatarImage: {
@@ -153,10 +155,10 @@ export default StyleSheet.create({
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#7C3AED',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -217,7 +219,10 @@ export default StyleSheet.create({
     padding: 14,
     borderRadius: RADIUS.xl,
     alignItems: 'center',
-    ...SHADOWS.md,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      android: { elevation: 6 },
+    }),
   },
 
   statIcon: {
@@ -271,7 +276,10 @@ export default StyleSheet.create({
     borderRadius: RADIUS.xxl,
     paddingHorizontal: 16,
     paddingVertical: 4,
-    ...SHADOWS.sm,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
   },
 
   infoRow: {
@@ -309,7 +317,7 @@ export default StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // ── ProfileScreen — Action buttons ───────────────────────────────────────
+  // ── ProfileScreen — Action buttons ────────────────────────────────────────
   actionButtons: {
     gap: 10,
     marginBottom: 32,
@@ -325,7 +333,10 @@ export default StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderRadius: RADIUS.xl,
-    ...SHADOWS.sm,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
   },
 
   settingsButtonText: {
@@ -361,7 +372,10 @@ export default StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderRadius: RADIUS.xl,
-    ...SHADOWS.md,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      android: { elevation: 6 },
+    }),
   },
 
   saveButtonText: {
@@ -434,11 +448,6 @@ export default StyleSheet.create({
     fontWeight: '500',
   },
 
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-
   headerSaveBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -458,16 +467,18 @@ export default StyleSheet.create({
     flex: 1,
   },
 
-  // ── SettingsScreen — Side nav (tablet) / Horizontal scroll (mobile) ───────
+  // ── SettingsScreen — Navigation ────────────────────────────────────────────
   settingsNav: {
     width: IS_TABLET ? 220 : '100%',
     backgroundColor: COLORS.white,
     borderRadius: IS_TABLET ? RADIUS.xl : 0,
     margin: IS_TABLET ? 16 : 0,
-    marginRight: IS_TABLET ? 0 : 0,
     paddingVertical: IS_TABLET ? 12 : 0,
     paddingHorizontal: IS_TABLET ? 8 : 0,
-    ...SHADOWS.sm,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
   },
 
   settingsNavScroll: {
@@ -509,7 +520,10 @@ export default StyleSheet.create({
     margin: 16,
     marginLeft: IS_TABLET ? 12 : 16,
     padding: 20,
-    ...SHADOWS.sm,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
   },
 
   formTitle: {
@@ -643,7 +657,7 @@ export default StyleSheet.create({
     marginTop: 2,
   },
 
-  // ── SettingsScreen — Security / list rows ─────────────────────────────────
+  // ── SettingsScreen — Security rows ────────────────────────────────────────
   securityRow: {
     flexDirection: 'row',
     alignItems: 'center',
