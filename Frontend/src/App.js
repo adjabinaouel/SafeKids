@@ -15,6 +15,12 @@ import HomeScreen           from './pages/parents/HomeScreen/HomeScreen';
 import NotificationScreen from './pages/parents/NotificationScreen/NotificationScreen';
 import ChildrenScreen      from './pages/parents/ChildrenScreen/ChildrenScreen';
 import MessagesScreen      from './pages/parents/MessagesScreen/MessagesScreen';
+import DashboardScreen from './pages/admin/DashboardScreen/DashboardScreen';
+import ComptesScreen from './pages/admin/ComptesScreen/ComptesScreen';
+import ActivitesScreen from './pages/admin/ActivitesScreen/ActivitesScreen';
+import NotificationsAdminScreen from './pages/admin/NotificationsAdminScreen/NotificationsAdminScreen';
+import ProfilAdminScreen from './pages/admin/ProfilAdminScreen/ProfilAdminScreen';
+import StatistiquesScreen from './pages/admin/StatistiquesScreen/StatistiquesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -47,6 +53,13 @@ export default function App() {
           <Stack.Screen name="Premium"        component={(props) => (
             <PremiumScreen {...props} onPremiumActivated={() => setIsPremium(true)} />
           )} />
+
+          <Stack.Screen name="Dashboard"      component={DashboardScreen} />
+          <Stack.Screen name="Comptes"        component={ComptesScreen} />
+          <Stack.Screen name="Activites"      component={ActivitesScreen} />
+          <Stack.Screen name="NotificationsAdmin" component={NotificationsAdminScreen} />
+          <Stack.Screen name="ProfilAdmin"    component={ProfilAdminScreen} />
+          <Stack.Screen name="Statistiques"   component={StatistiquesScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
