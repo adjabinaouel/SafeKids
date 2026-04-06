@@ -9,8 +9,9 @@ import FeedbackScreen       from './pages/parents/FeedbackScreen/FeedbackScreen'
 import ActivitiesScreen     from './pages/parents/ActivitiesScreen/ActivitiesScreen';
 import ActivityPlayerScreen from './pages/parents/ActivityPlayerScreen/ActivityPlayerScreen';
 import PremiumScreen        from './pages/parents/PremiumScreen/PremiumScreen';
-import ProfileScreen        from './pages/parents/ProfileScreen/ProfileScreen';
-import SettingsScreen       from './pages/parents/ProfileScreen/SettingsScreen'; 
+import ProfileScreen        from './pages/common/profile/ProfileScreen';
+import SettingsScreen       from './pages/common/profile/settings/SettingsScreen'; 
+import AdminSettingsScreen from './pages/common/profile/settings/AdminSettingsScreen';
 import HomeScreen           from './pages/parents/HomeScreen/HomeScreen';
 import NotificationScreen from './pages/parents/NotificationScreen/NotificationScreen';
 import ChildrenScreen      from './pages/parents/ChildrenScreen/ChildrenScreen';
@@ -19,7 +20,7 @@ import DashboardScreen from './pages/admin/DashboardScreen/DashboardScreen';
 import ComptesScreen from './pages/admin/ComptesScreen/ComptesScreen';
 import ActivitesScreen from './pages/admin/ActivitesScreen/ActivitesScreen';
 import NotificationsAdminScreen from './pages/admin/NotificationsAdminScreen/NotificationsAdminScreen';
-import ProfilAdminScreen from './pages/admin/ProfilAdminScreen/ProfilAdminScreen';
+import ProfilAdminScreen from './pages/common/profile/AdminProfileScreen';
 import StatistiquesScreen from './pages/admin/StatistiquesScreen/StatistiquesScreen';
 
 const Stack = createNativeStackNavigator();
@@ -36,7 +37,7 @@ export default function App() {
       <NavigationContainer>
         <Stack.Navigator
           screenOptions={{ headerShown: false }}
-          initialRouteName="Home"
+          initialRouteName="Login"
         >
           <Stack.Screen name="Login"          component={LoginPage} />
           <Stack.Screen name="Signup"         component={SignupPage} />
@@ -56,6 +57,7 @@ export default function App() {
 
           <Stack.Screen name="Dashboard"      component={DashboardScreen} />
           <Stack.Screen name="Comptes"        component={ComptesScreen} />
+          <Stack.Screen name='AdminSettings'  component={AdminSettingsScreen}/>
           <Stack.Screen name="Activites"      component={ActivitesScreen} />
           <Stack.Screen name="NotificationsAdmin" component={NotificationsAdminScreen} />
           <Stack.Screen name="ProfilAdmin"    component={ProfilAdminScreen} />

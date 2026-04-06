@@ -4,7 +4,11 @@ import { COLORS, GLASS } from '../../../theme';
 export default StyleSheet.create({
   container:      { flex: 1, backgroundColor: COLORS.surface },
   scrollContent:  { paddingBottom: Platform.OS === 'ios' ? 100 : 90 },
-  header:         { paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 24, paddingHorizontal: 20 },
+  header: {
+    paddingTop: Platform.OS === 'ios' ? 54 : 36,
+    paddingBottom: 20, paddingHorizontal: 20, overflow: 'hidden',
+  },
+  headerTopRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   headerGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.70)', fontWeight: '600', marginBottom: 4 },
   headerTitle:    { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
   headerAccent:   { color: '#FCD34D' },

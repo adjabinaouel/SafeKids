@@ -6,11 +6,20 @@ export default StyleSheet.create({
   scrollContent:    { paddingBottom: Platform.OS === 'ios' ? 100 : 90 },
 
   // Header
-  header:           { paddingTop: Platform.OS === 'ios' ? 54 : 36, paddingBottom: 24, paddingHorizontal: 20 },
-  headerTopRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
-  headerGreeting:   { fontSize: 13, color: 'rgba(255,255,255,0.70)', fontWeight: '600', marginBottom: 4 },
-  headerTitle:      { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-  headerAccent:     { color: '#FCD34D' },
+  header: {
+    paddingTop: Platform.OS === 'ios' ? 54 : 36,
+    paddingBottom: 20, paddingHorizontal: 20, overflow: 'hidden',
+  },
+  headerTopRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  headerGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.70)', fontWeight: '600', marginBottom: 4 },
+  headerTitle:    { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
+  headerAccent:   { color: '#FCD34D' },
+  addHeaderBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    justifyContent: 'center', alignItems: 'center',
+  },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: GLASS.hero.bg, borderRadius: 14,

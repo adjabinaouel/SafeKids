@@ -24,7 +24,9 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ffffff",
+         "softwareKeyboardLayoutMode": "pan",
+           "usesCleartextTraffic": true
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emmanaouel.Frontend",

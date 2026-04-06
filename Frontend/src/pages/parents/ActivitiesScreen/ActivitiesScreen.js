@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, Modal, Dimensions, StatusBar,
+  TextInput, Modal, Dimensions, StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -262,6 +262,18 @@ export default function ActivitiesScreen({ isPremium: isPremiumProp = false }) {
   const [selected, setSelected] = useState(null);
   const [modalVisible, setModal] = useState(false);
 
+  // ✅ FIX 1: headerAnim correctement défini
+  const headerAnim = useRef(new Animated.Value(0)).current;
+
+  // ✅ Animation du header au montage
+  useEffect(() => {
+    Animated.timing(headerAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
   const dayActivities = getDayActivities();
   const domainesActifs = DOMAINES.filter(d => d !== 'Tous');
 
@@ -289,51 +301,64 @@ export default function ActivitiesScreen({ isPremium: isPremiumProp = false }) {
         <StatusBar barStyle="light-content" />
 
         <LinearGradient
-          colors={['#732eec', '#844fd8']}
+          colors={['#1A0A4A', '#3B1FA8', '#6C3AED', '#9D68F5']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={S.header}
         >
-          <View style={S.headerTopRow}>
-            <View>
-              <Text style={S.headerTitle}>
-                Activités pour <Text style={S.headerAccent}>Amine</Text>
-              </Text>
-            </View>
-            <View style={S.headerAvatar}>
-              <Text style={{ fontSize: 20 }}>👦</Text>
-            </View>
-          </View>
+          {/* Decorative blobs */}
+          <View style={{ position: 'absolute', right: -60, top: -40, width: 220, height: 220, borderRadius: 110, backgroundColor: '#A78BFA', opacity: 0.18 }} />
+          <View style={{ position: 'absolute', left: -40, bottom: -30, width: 180, height: 180, borderRadius: 90, backgroundColor: '#06B6D4', opacity: 0.10 }} />
+          {/* ✅ FIX 2: 'rgba(...)' au lieu de gl(0.22) */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.22)' }} />
 
-          <View style={S.statsRow}>
-            {[
-              { v: ACTIVITIES.length, l: 'Activités', i: '🎯' },
-              { v: '100', l: 'Enfants', i: '👥' },
-              { v: '428', l: 'Sessions', i: '📊' },
-            ].map((s, i) => (
-              <View key={i} style={S.statPill}>
-                <Text style={{ fontSize: 13 }}>{s.i}</Text>
-                <Text style={S.statPillValue}>{s.v}</Text>
-                <Text style={S.statPillLabel}>{s.l}</Text>
+          {/* ✅ FIX 3: Animated.View avec du contenu réel */}
+          <Animated.View style={{
+            opacity: headerAnim,
+            transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
+            paddingHorizontal: 22,
+          }}>
+            <View style={S.headerTopRow}>
+              <View>
+                <Text style={S.headerTitle}>
+                  Activités pour <Text style={S.headerAccent}>Amine</Text>
+                </Text>
               </View>
-            ))}
-          </View>
+              <View style={S.headerAvatar}>
+                <Text style={{ fontSize: 20 }}>👦</Text>
+              </View>
+            </View>
 
-          <View style={S.searchWrapper}>
-            <Feather name="search" size={16} color="rgba(255,255,255,0.6)" />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Rechercher une activité…"
-              placeholderTextColor="rgba(255,255,255,0.5)"
-              style={S.searchInput}
-            />
-            {!!search && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Feather name="x" size={16} color="rgba(255,255,255,0.6)" />
-              </TouchableOpacity>
-            )}
-          </View>
+            <View style={S.statsRow}>
+              {[
+                { v: ACTIVITIES.length, l: 'Activités', i: '🎯' },
+                { v: '100', l: 'Enfants', i: '👥' },
+                { v: '428', l: 'Sessions', i: '📊' },
+              ].map((s, i) => (
+                <View key={i} style={S.statPill}>
+                  <Text style={{ fontSize: 13 }}>{s.i}</Text>
+                  <Text style={S.statPillValue}>{s.v}</Text>
+                  <Text style={S.statPillLabel}>{s.l}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={S.searchWrapper}>
+              <Feather name="search" size={16} color="rgba(255,255,255,0.6)" />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Rechercher une activité…"
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                style={S.searchInput}
+              />
+              {!!search && (
+                <TouchableOpacity onPress={() => setSearch('')}>
+                  <Feather name="x" size={16} color="rgba(255,255,255,0.6)" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </Animated.View>
         </LinearGradient>
 
         <ScrollView

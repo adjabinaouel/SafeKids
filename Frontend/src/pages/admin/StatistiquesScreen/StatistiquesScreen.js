@@ -57,6 +57,10 @@ export default function StatistiquesScreen() {
 
         <LinearGradient colors={['#4C1D95', '#1E1B4B']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={S.header}>
+             {/* Blobs */}
+                 <View style={{ position: 'absolute', left: -60, top: -20, width: 200, height: 200, borderRadius: 100, backgroundColor: '#6D28D9', opacity: 0.35 }} />
+                <View style={{ position: 'absolute', right: -40, bottom: -30, width: 160, height: 160, borderRadius: 80, backgroundColor: '#3B82F6', opacity: 0.18 }} />
+                        
           <Text style={S.headerGreeting}>Tableau analytique</Text>
           <Text style={S.headerTitle}>
             Statis<Text style={S.headerAccent}>tiques</Text>
