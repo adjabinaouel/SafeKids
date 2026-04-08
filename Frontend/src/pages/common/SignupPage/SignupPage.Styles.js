@@ -6,7 +6,6 @@ const isWeb = Platform.OS === 'web';
 const COLORS = {
   primary:      '#7C3AED',
   primaryLight: '#EDE9FE',
-  primaryMid:   '#A855F7',
   background:   '#FDF8FF',
   surface:      'rgba(248,245,255,0.9)',
   glass:        'rgba(255,255,255,0.85)',
@@ -24,7 +23,6 @@ const COLORS = {
 
 export default StyleSheet.create({
 
-  // ── Layout ──────────────────────────────────────────
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -34,7 +32,6 @@ export default StyleSheet.create({
     paddingHorizontal: isWeb ? 0 : 24,
     paddingBottom: 40,
     alignItems: isWeb ? 'center' : 'stretch',
-    // ✅ FIX : justifyContent retiré sur Android pour éviter les recalculs de layout
   },
   card: {
     backgroundColor: COLORS.glass,
@@ -44,8 +41,6 @@ export default StyleSheet.create({
     borderWidth: isWeb ? 1.5 : 0,
     borderColor: 'rgba(167,139,250,0.25)',
     ...Platform.select({
-      ios: {},
-      android: {},
       web: {
         boxShadow: '0 8px 48px rgba(124,58,237,0.12), 0 2px 8px rgba(124,58,237,0.06)',
         backdropFilter: 'blur(24px)',
@@ -54,7 +49,6 @@ export default StyleSheet.create({
     }),
   },
 
-  // ── Retour ──────────────────────────────────────────
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -72,7 +66,6 @@ export default StyleSheet.create({
     marginLeft: 3,
   },
 
-  // ── Brand ───────────────────────────────────────────
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -95,7 +88,6 @@ export default StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  // ── Header ──────────────────────────────────────────
   header: {
     alignItems: 'center',
     marginBottom: 20,
@@ -119,7 +111,6 @@ export default StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // ── Section label ────────────────────────────────────
   sectionTitle: {
     fontSize: 10,
     fontWeight: '800',
@@ -129,7 +120,6 @@ export default StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // ── Roles ────────────────────────────────────────────
   roleGrid: {
     flexDirection: 'row',
     marginBottom: 18,
@@ -158,7 +148,6 @@ export default StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // ── Alerte ───────────────────────────────────────────
   alert: {
     borderRadius: 10,
     padding: 10,
@@ -175,7 +164,6 @@ export default StyleSheet.create({
     color: COLORS.errorText,
   },
 
-  // ── Inputs ───────────────────────────────────────────
   row: {
     flexDirection: 'row',
     marginBottom: 0,
@@ -183,12 +171,10 @@ export default StyleSheet.create({
   inputGroup: {
     flex: 1,
     marginBottom: 14,
-    // ✅ FIX : hauteur fixe pour éviter recalcul au focus
     minHeight: 74,
   },
   fullField: {
     marginBottom: 14,
-    // ✅ FIX : hauteur fixe pour éviter recalcul au focus
     minHeight: 74,
   },
   inputLabel: {
@@ -202,19 +188,16 @@ export default StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.white,       // ✅ FIX : blanc pur pour meilleur contraste
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     paddingHorizontal: 13,
-    // ✅ FIX : hauteur fixe obligatoire
     height: 48,
-    // ✅ FIX : pas d'elevation ici
   },
   inputWrapperActive: {
     borderColor: COLORS.borderActive,
     backgroundColor: COLORS.white,
-    // ✅ FIX : elevation SUPPRIMÉ sur Android — cause des vibrations au focus
     ...Platform.select({
       ios: {
         shadowColor: COLORS.primary,
@@ -222,9 +205,7 @@ export default StyleSheet.create({
         shadowOpacity: 0.12,
         shadowRadius: 6,
       },
-      android: {
-        // ❌ elevation: 2  ← supprimé volontairement
-      },
+      android: {},                        // ✅ FIX : pas d'elevation sur Android
       web: { boxShadow: '0 0 0 3px rgba(124,58,237,0.08)' },
     }),
   },
@@ -233,19 +214,17 @@ export default StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 14,
-    color: '#4C1D95',
-    fontWeight: '600',
-    // ✅ FIX : hauteur explicite sur Android
+    fontSize: 15,                         // ✅ FIX : légèrement plus grand
+    color: '#1A1035',                     // ✅ FIX : quasi-noir pour lisibilité maximale
+    fontWeight: '500',                    // ✅ FIX : moins lourd, plus lisible
     height: 48,
     ...Platform.select({ web: { outlineStyle: 'none' } }),
   },
 
-  // ── Picker ───────────────────────────────────────────
   pickerWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.white,       // ✅ FIX : blanc pur
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: COLORS.border,
@@ -255,7 +234,7 @@ export default StyleSheet.create({
   },
   picker: {
     flex: 1,
-    color: '#4C1D95',
+    color: '#1A1035',                     // ✅ FIX : quasi-noir
     height: 48,
     ...Platform.select({
       android: { marginLeft: -4 },
@@ -263,18 +242,17 @@ export default StyleSheet.create({
         border: 'none',
         background: 'transparent',
         fontSize: 14,
-        fontWeight: '600',
-        color: '#4C1D95',
+        fontWeight: '500',
+        color: '#1A1035',
         outline: 'none',
       },
     }),
   },
   pickerItem: {
     fontSize: 14,
-    color: '#4C1D95',
+    color: '#1A1035',                     // ✅ FIX : quasi-noir
   },
 
-  // ── Terms ────────────────────────────────────────────
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -293,7 +271,6 @@ export default StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Bouton principal ─────────────────────────────────
   primaryButton: {
     height: 50,
     borderRadius: 14,
@@ -328,14 +305,12 @@ export default StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // ── Séparateur ───────────────────────────────────────
   divider: {
     height: 1,
     backgroundColor: 'rgba(167,139,250,0.15)',
     marginVertical: 16,
   },
 
-  // ── Footer ───────────────────────────────────────────
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

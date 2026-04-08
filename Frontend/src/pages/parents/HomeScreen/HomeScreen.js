@@ -3,15 +3,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, Image, TouchableOpacity, ScrollView,
   StatusBar, Animated, Dimensions, Alert, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ParentLayout from '../../../components/Navigation/ParentNavigation';
-import GlassCard    from '../../../components/UI/GlassCard';
-import GlassPill    from '../../../components/UI/GlassPill';
-import GlassButton  from '../../../components/UI/GlassButton';
-import { COLORS, GLASS, gradients, shadow, radius, spacing, type } from '../../../theme';
+import GlassCard   from '../../../components/UI/GlassCard';
+import GlassPill   from '../../../components/UI/GlassPill';
+import GlassButton from '../../../components/UI/GlassButton';
+import { COLORS, GLASS, gradients, shadow } from '../../../theme';
+
+// ✅ Même SERVER_URL que ProfileScreen
+const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 
 const { width } = Dimensions.get('window');
 
@@ -40,7 +44,6 @@ const MockupCard = ({ icon, title, value, sub, color, delay }) => {
       width: (width - 56) / 2,
     }}>
       <GlassCard variant="hero" borderRadius={20} style={{ padding: 16 }}>
-        {/* Icon circle */}
         <View style={{
           width: 40, height: 40, borderRadius: 14,
           backgroundColor: GLASS.hero.bg,
@@ -84,8 +87,8 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
 
   return (
     <Animated.View style={{
-      opacity:    anim,
-      transform:  [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+      opacity:   anim,
+      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
       marginBottom: 10,
     }}>
       <GlassCard
@@ -106,7 +109,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 }}>
-          {/* Icon gradient */}
           <LinearGradient
             colors={step.done ? ['#7C3AED', '#9D68F5'] : ['rgba(248,250,252,0.9)', 'rgba(241,245,249,0.9)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -120,7 +122,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
             <Feather name={step.icon} size={21} color={step.done ? '#fff' : COLORS.textMuted} />
           </LinearGradient>
 
-          {/* Texte */}
           <View style={{ flex: 1 }}>
             <Text style={{
               fontSize: 14, fontWeight: '700',
@@ -129,8 +130,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
               {step.title}
             </Text>
             <Text style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 17 }}>{step.desc}</Text>
-
-            {/* Tag glass */}
             <View style={{
               backgroundColor: step.done ? COLORS.primaryMid : GLASS.light.bg,
               borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
@@ -148,7 +147,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
             </View>
           </View>
 
-          {/* Checkbox glass */}
           <TouchableOpacity
             onPress={() => onToggle(step.id)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -170,9 +168,11 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
 
 // ── ÉCRAN PRINCIPAL ───────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const [userData, setUserData] = useState({ prenom: 'Sara', nom: 'Bensalem', avatar: null });
-  const [steps,    setSteps]    = useState(GUIDE_STEPS);
+  // ✅ userData aligné sur ProfileScreen : prenom, nom, email, avatar
+  const [userData, setUserData] = useState({ prenom: '', nom: '', email: '', avatar: null });
+  const [steps, setSteps]       = useState(GUIDE_STEPS);
   const [greeting, setGreeting] = useState('Bonjour');
+  const [loading, setLoading]   = useState(true);
 
   const heroAnim    = useRef(new Animated.Value(0)).current;
   const contentAnim = useRef(new Animated.Value(0)).current;
@@ -181,15 +181,72 @@ export default function HomeScreen({ navigation }) {
   const progressPct = (doneCount / steps.length) * 100;
 
   useEffect(() => {
-    AsyncStorage.getItem('userProfile').then(d => { if (d) setUserData(p => ({ ...p, ...JSON.parse(d) })); }).catch(() => {});
-    AsyncStorage.getItem('guideSteps').then(d => { if (d) setSteps(JSON.parse(d)); }).catch(() => {});
+    loadUserData();
+    loadGuideSteps();
+
     const h = new Date().getHours();
     setGreeting(h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir');
+
     Animated.stagger(200, [
       Animated.spring(heroAnim,    { toValue: 1, tension: 55, friction: 8, useNativeDriver: true }),
-      Animated.timing(contentAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(contentAnim, { toValue: 1, duration: 600,            useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ Logique identique à ProfileScreen.loadUserProfile()
+  const loadUserData = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+
+      if (!token) {
+        Alert.alert("Session expirée", "Veuillez vous reconnecter.");
+        navigation.navigate('Login');
+        return;
+      }
+
+      const response = await fetch(`${SERVER_URL}/profile`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          Alert.alert("Session expirée", "Veuillez vous reconnecter.");
+          navigation.navigate('Login');
+        } else {
+          Alert.alert("Erreur", data.message || "Impossible de charger le profil");
+        }
+        return;
+      }
+
+      // ✅ Même mapping de champs que ProfileScreen
+      setUserData({
+        prenom: data.prenom || 'Parent',
+        nom:    data.nom    || '',
+        email:  data.email  || '',
+        avatar: null, // avatar géré localement via AsyncStorage
+      });
+
+    } catch (error) {
+      console.error('Erreur chargement utilisateur:', error);
+      Alert.alert("Erreur", "Impossible de charger votre profil. Vérifiez votre connexion.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadGuideSteps = async () => {
+    try {
+      const savedSteps = await AsyncStorage.getItem('guideSteps');
+      if (savedSteps) setSteps(JSON.parse(savedSteps));
+    } catch (e) {}
+  };
 
   const toggleStep = async (id) => {
     const updated = steps.map(s => s.id === id ? { ...s, done: !s.done } : s);
@@ -208,6 +265,17 @@ export default function HomeScreen({ navigation }) {
     ]);
   };
 
+  if (loading) {
+    return (
+      <ParentLayout activeTab="home">
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={{ marginTop: 10, color: COLORS.textMuted }}>Chargement du profil...</Text>
+        </View>
+      </ParentLayout>
+    );
+  }
+
   return (
     <ParentLayout activeTab="home">
       <View style={{ flex: 1, backgroundColor: COLORS.white }}>
@@ -221,18 +289,17 @@ export default function HomeScreen({ navigation }) {
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1.3 }}
             style={{ overflow: 'hidden', paddingBottom: 36 }}
           >
-            {/* Blobs */}
+            {/* Blobs décoratifs */}
             {[
-              { left: -90,  top: 40,        w: 320, h: 320, r: 160, color: '#6D28D9', op: 0.45, sx: 1.5 },
-              { right: -50, top: 80,        w: 240, h: 240, r: 120, color: '#10B981', op: 0.13 },
-              { left: 30,   bottom: -20,    w: 200, h: 200, r: 100, color: '#F59E0B', op: 0.11 },
-              { right: -20, bottom: 40,     w: 180, h: 180, r: 90,  color: '#3B82F6', op: 0.15 },
-              { left: width*0.35, top: 60,  w: 220, h: 220, r: 110, color: '#A78BFA', op: 0.20 },
+              { left: -90,          top: 40,     w: 320, h: 320, r: 160, color: '#6D28D9', op: 0.45, sx: 1.5 },
+              { right: -50,         top: 80,     w: 240, h: 240, r: 120, color: '#10B981', op: 0.13 },
+              { left: 30,           bottom: -20, w: 200, h: 200, r: 100, color: '#F59E0B', op: 0.11 },
+              { right: -20,         bottom: 40,  w: 180, h: 180, r: 90,  color: '#3B82F6', op: 0.15 },
+              { left: width * 0.35, top: 60,     w: 220, h: 220, r: 110, color: '#A78BFA', op: 0.20 },
             ].map((b, i) => (
               <View key={i} style={{
                 position: 'absolute',
-                left: b.left, right: b.right,
-                top: b.top, bottom: b.bottom,
+                left: b.left, right: b.right, top: b.top, bottom: b.bottom,
                 width: b.w, height: b.h, borderRadius: b.r,
                 backgroundColor: b.color, opacity: b.op,
                 ...(b.sx ? { transform: [{ scaleX: b.sx }] } : {}),
@@ -241,7 +308,7 @@ export default function HomeScreen({ navigation }) {
 
             {/* Top bar */}
             <Animated.View style={{
-              opacity: heroAnim,
+              opacity:   heroAnim,
               transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] }) }],
               paddingTop: Platform.OS === 'ios' ? 58 : 34,
               paddingHorizontal: 22,
@@ -252,6 +319,7 @@ export default function HomeScreen({ navigation }) {
                 <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.62)', fontWeight: '500' }}>
                   {greeting} 👋
                 </Text>
+                {/* ✅ Prénom + Nom récupérés du backend */}
                 <Text style={{ fontSize: 27, fontWeight: '800', color: '#fff', marginTop: 3, letterSpacing: -0.8, lineHeight: 33 }}>
                   {userData.prenom}{'\n'}{userData.nom}
                 </Text>
@@ -264,7 +332,7 @@ export default function HomeScreen({ navigation }) {
                 />
               </View>
 
-              {/* Avatar */}
+              {/* Avatar — tappable vers Profile */}
               <TouchableOpacity
                 onPress={() => navigation?.navigate('Profile')}
                 activeOpacity={0.82}
@@ -286,7 +354,7 @@ export default function HomeScreen({ navigation }) {
 
             {/* Mockup cards */}
             <Animated.View style={{
-              opacity: heroAnim,
+              opacity:   heroAnim,
               transform: [{ scale: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [0.93, 1] }) }],
               paddingHorizontal: 22,
             }}>
@@ -301,7 +369,7 @@ export default function HomeScreen({ navigation }) {
             </Animated.View>
           </LinearGradient>
 
-          {/* ══ SECTION 1 — GUIDE PROGRESS (flottant sur hero) ══════════════ */}
+          {/* ══ SECTION 1 — GUIDE PROGRESS ══════════════════════════════════ */}
           <Animated.View style={{ opacity: contentAnim }}>
             <View style={{ paddingHorizontal: 22, marginTop: -20 }}>
               <GlassCard variant="light" borderRadius={24} style={{
@@ -312,12 +380,6 @@ export default function HomeScreen({ navigation }) {
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={{ borderRadius: 24, padding: 22, overflow: 'hidden' }}
                 >
-                  {/* Shimmer */}
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: GLASS.dark.shimmer, zIndex: 1 }} />
-                  {/* Déco orbs */}
-                  <View style={{ position: 'absolute', right: -18, top: -18, width: 120, height: 120, borderRadius: 60, backgroundColor: GLASS.dark.bg }} />
-                  <View style={{ position: 'absolute', right: 54,  bottom: -28, width: 88, height: 88, borderRadius: 44, backgroundColor: 'rgba(255,255,255,0.03)' }} />
-
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 4 }}>
@@ -329,7 +391,6 @@ export default function HomeScreen({ navigation }) {
                           : `${steps.length - doneCount} étape${steps.length - doneCount > 1 ? 's' : ''} restante${steps.length - doneCount > 1 ? 's' : ''}`}
                       </Text>
                     </View>
-                    {/* Cercle % */}
                     <View style={{
                       width: 52, height: 52, borderRadius: 26,
                       backgroundColor: GLASS.dark.bg,
@@ -343,7 +404,6 @@ export default function HomeScreen({ navigation }) {
                     </View>
                   </View>
 
-                  {/* Barres segmentées */}
                   <View style={{ flexDirection: 'row', gap: 6, marginTop: 18 }}>
                     {steps.map((s) => (
                       <View key={s.id} style={{
@@ -362,15 +422,10 @@ export default function HomeScreen({ navigation }) {
 
             {/* ══ SECTION 2 — POURQUOI SAFEKIDS ════════════════════════════ */}
             <View style={{ paddingTop: 52, paddingBottom: 36, backgroundColor: COLORS.white, overflow: 'hidden' }}>
-              {/* Blobs déco */}
-              <View style={{ position: 'absolute', left: -100, top: 0,   width: 280, height: 280, borderRadius: 140, backgroundColor: '#EDE9FE', opacity: 0.5,  transform: [{ scaleX: 1.3 }] }} />
+              <View style={{ position: 'absolute', left: -100, top: 0,    width: 280, height: 280, borderRadius: 140, backgroundColor: '#EDE9FE', opacity: 0.5,  transform: [{ scaleX: 1.3 }] }} />
               <View style={{ position: 'absolute', right: -80, bottom: 0, width: 220, height: 220, borderRadius: 110, backgroundColor: '#DDD6FE', opacity: 0.35 }} />
 
-              <GlassPill
-                variant="primary"
-                label="POURQUOI SAFEKIDS ?"
-                style={{ alignSelf: 'center', marginBottom: 10 }}
-              />
+              <GlassPill variant="primary" label="POURQUOI SAFEKIDS ?" style={{ alignSelf: 'center', marginBottom: 10 }} />
               <Text style={{ textAlign: 'center', fontSize: 23, fontWeight: '800', color: COLORS.text, letterSpacing: -0.6, paddingHorizontal: 24, lineHeight: 30 }}>
                 Une app qui fait{'\n'}
                 <Text style={{ color: COLORS.primary }}>vraiment la différence</Text>
@@ -379,7 +434,6 @@ export default function HomeScreen({ navigation }) {
                 Tout ce dont les parents ont besoin pour accompagner leur enfant au quotidien.
               </Text>
 
-              {/* Grille 2×2 */}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 22 }}>
                 <FeatureCard icon="shield"      title="Sécurisé"    desc="Données protégées"  color={COLORS.primary} bg={COLORS.primaryMid}   />
                 <FeatureCard icon="zap"         title="Intelligent" desc="IA adaptative"       color="#0EA5E9"        bg="#E0F2FE"             />
@@ -468,7 +522,6 @@ export default function HomeScreen({ navigation }) {
                     label="PREMIUM"
                     style={{ marginBottom: 18 }}
                   />
-
                   <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff', letterSpacing: -0.6, lineHeight: 32, marginBottom: 10 }}>
                     Tout débloquer{'\n'}pour votre enfant
                   </Text>
@@ -532,10 +585,10 @@ export default function HomeScreen({ navigation }) {
 
                 <View style={{ paddingHorizontal: 22, paddingBottom: 22 }}>
                   {[
-                    { icon: 'check-circle', color: COLORS.primary, text: 'Soigneusement conçue pour les familles'     },
-                    { icon: 'check-circle', color: '#0EA5E9',       text: 'Synchronisation en temps réel'             },
-                    { icon: 'check-circle', color: COLORS.success,  text: "Accès aux activités depuis n'importe où"  },
-                    { icon: 'check-circle', color: COLORS.warning,  text: 'Support disponible 24h/24, 7j/7'          },
+                    { icon: 'check-circle', color: COLORS.primary, text: 'Soigneusement conçue pour les familles'    },
+                    { icon: 'check-circle', color: '#0EA5E9',       text: 'Synchronisation en temps réel'            },
+                    { icon: 'check-circle', color: COLORS.success,  text: "Accès aux activités depuis n'importe où" },
+                    { icon: 'check-circle', color: COLORS.warning,  text: 'Support disponible 24h/24, 7j/7'         },
                   ].map((item, i) => (
                     <View key={i} style={{
                       flexDirection: 'row', alignItems: 'flex-start', gap: 12,
@@ -561,7 +614,7 @@ export default function HomeScreen({ navigation }) {
               </GlassCard>
             </View>
 
-            {/* Footer glass */}
+            {/* Footer */}
             <View style={{ alignItems: 'center', paddingTop: 32, paddingBottom: 6 }}>
               <GlassCard variant="light" borderRadius={20} style={{ paddingHorizontal: 18, paddingVertical: 10, alignItems: 'center', gap: 3 }}>
                 <Text style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: '500' }}>SafeKids v2.1.0 · © 2026</Text>

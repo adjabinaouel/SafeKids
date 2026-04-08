@@ -14,9 +14,6 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './LoginPage.Styles.js';
 
-const ADMIN_EMAIL = 'admin@gmail.com';
-const ADMIN_PASSWORD = 'admin123';
-
 const COLORS = {
   primary: '#7C3AED',
   textLight: '#8B7AA8',
@@ -24,78 +21,100 @@ const COLORS = {
 };
 
 const ROLES = [
-  { id: 'admin',   label: 'ADMIN',   icon: 'shield'  },
-  { id: 'parent',  label: 'PARENT',  icon: 'people'  },
-  { id: 'medecin', label: 'MÉDECIN', icon: 'medkit'  },
+  { id: 'Admin',   label: 'ADMIN',   icon: 'shield'  },
+  { id: 'Parent',  label: 'PARENT',  icon: 'people'  },
+  { id: 'Medecin', label: 'MÉDECIN', icon: 'medkit'  },
 ];
 
-const SERVER_IP = '10.243.127.170';
+// ✅ URL ngrok — change cette ligne à chaque fois que tu relances ngrok
+const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+
+// ✅ MAP des écrans selon le rôle — adapte si tes écrans ont des noms différents
+const ROLE_SCREENS = {
+  Admin:   'Dashboard',
+  Parent:  'Home',
+  Medecin: 'DashboardMedecin',
+};
 
 export default function LoginPage({ navigation }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('parent');
+  const [email,      setEmail]      = useState('');
+  const [password,   setPassword]   = useState('');
+  const [role,       setRole]       = useState('Parent');
   const [focusField, setFocusField] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [errorMsg,   setErrorMsg]   = useState('');
+  const [loading,    setLoading]    = useState(false);
 
   const clearError = () => setErrorMsg('');
 
   const handleLogin = async () => {
     clearError();
+
     if (!email.trim() || !password.trim()) {
       setErrorMsg('Veuillez remplir tous les champs.');
       return;
     }
-    setLoading(true);
-    try {
-      if (role === 'admin') {
-        if (email.trim() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-          await AsyncStorage.setItem('userRole', 'Admin');
-          navigation.navigate('DashboardAdmin');
-          setLoading(false);
-          return;
-        } else {
-          setErrorMsg('Identifiants administrateur invalides.');
-          setLoading(false);
-          return;
-        }
-      }
 
-      const response = await fetch(`http://${SERVER_IP}:5000/login`, {
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${SERVER_URL}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({
-          email: email.trim(),
+          email:      email.trim().toLowerCase(),
           motDePasse: password,
-          role: role,
+          role,
         }),
       });
+
+      // ✅ FIX : on vérifie si la réponse est bien du JSON avant de parser
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Réponse non-JSON:', text);
+        setErrorMsg('Erreur serveur. Vérifiez que ngrok est lancé et accessible.');
+        return;
+      }
 
       const data = await response.json();
 
       if (!response.ok) {
-        setErrorMsg(data.message || 'Connexion échouée');
-        setLoading(false);
+        setErrorMsg(data.message || 'Connexion échouée. Vérifiez vos identifiants.');
         return;
       }
 
+      // ✅ Sauvegarde token + données
       await AsyncStorage.setItem('userToken', data.token);
-      await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+      await AsyncStorage.setItem('userRole',  data.user.role);
+      await AsyncStorage.setItem('userData',  JSON.stringify(data.user));
 
-      if (data.user.role === 'Parent') {
-        navigation.navigate('Home');
-      } else if (data.user.role === 'Medecin') {
-        navigation.navigate('DashboardMedecin');
-      } else {
-        navigation.navigate('DashboardParent');
+      // ✅ Redirection via la map — évite les fautes de frappe sur les noms d'écrans
+      const userRole   = data.user.role;
+      const screenName = ROLE_SCREENS[userRole];
+
+      if (!screenName) {
+        setErrorMsg(`Rôle inconnu : "${userRole}". Contactez un administrateur.`);
+        return;
       }
 
+      // ✅ FIX crash Admin : on vérifie que l'écran existe dans le navigator
+      //    Si tu as une erreur "no screen named Dashboard", change la valeur dans ROLE_SCREENS
+      navigation.reset({
+        index: 0,
+        routes: [{ name: screenName }],
+      });
+
     } catch (error) {
-      setErrorMsg(
-        "Impossible de se connecter au serveur.\nVérifie que :\n• Le backend est lancé\n• Ton téléphone est sur le même WiFi\n• L'IP est correcte"
-      );
-      console.error(error);
+      // ✅ FIX : message d'erreur plus précis pour débugger
+      console.error('Login error:', error);
+      if (error.message?.includes('Network request failed')) {
+        setErrorMsg('Impossible de joindre le serveur. Vérifiez que ngrok est lancé.');
+      } else {
+        setErrorMsg(`Erreur : ${error.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -118,10 +137,12 @@ export default function LoginPage({ navigation }) {
             value={value}
             onChangeText={(v) => { onChange(v); clearError(); }}
             placeholder={label}
-            placeholderTextColor="#C4B5FD"
+            placeholderTextColor="#A78BFA"
             keyboardType={type}
             secureTextEntry={secure}
-            autoCapitalize={type === 'email-address' ? 'none' : 'sentences'}
+            // ✅ FIX lisibilité : pas d'autoCapitalize sur email/password
+            autoCapitalize="none"
+            autoCorrect={false}
             onFocus={() => setFocusField(key)}
             onBlur={() => setFocusField(null)}
             underlineColorAndroid="transparent"
@@ -134,8 +155,6 @@ export default function LoginPage({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-
-      {/* ✅ FIX ANDROID : pas de KeyboardAvoidingView, ScrollView direct */}
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}

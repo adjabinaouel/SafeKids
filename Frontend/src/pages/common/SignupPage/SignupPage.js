@@ -23,15 +23,16 @@ const COLORS = {
 
 const NB_ENFANTS_OPTIONS = [
   { label: 'Selectionnez...', value: '' },
-  { label: '1 enfant',            value: '1'  },
-  { label: '2 enfants',           value: '2'  },
-  { label: '3 enfants',           value: '3'  },
-  { label: '4 enfants',           value: '4'  },
-  { label: '5 enfants',           value: '5'  },
-  { label: '6 enfants ou plus',   value: '6+' },
+  { label: '1 enfant',          value: '1'  },
+  { label: '2 enfants',         value: '2'  },
+  { label: '3 enfants',         value: '3'  },
+  { label: '4 enfants',         value: '4'  },
+  { label: '5 enfants',         value: '5'  },
+  { label: '6 enfants ou plus', value: '6+' },
 ];
 
-const SERVER_IP = '10.243.127.170';
+// ✅ URL ngrok — change cette ligne à chaque fois que tu relances ngrok
+const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 
 export default function SignupPage({ navigation }) {
   const [prenom, setPrenom]                   = useState('');
@@ -71,18 +72,30 @@ export default function SignupPage({ navigation }) {
     }
 
     try {
-      const response = await fetch(`http://${SERVER_IP}:5000/signup`, {
+      const response = await fetch(`${SERVER_URL}/signup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({
           nom: nom.trim(),
           prenom: prenom.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           motDePasse: password,
           nbrEnfantsAutistes: nbEnfants,
           telephone: '',
         }),
       });
+
+      // ✅ FIX : vérification content-type avant parsing JSON
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Réponse non-JSON:', text);
+        setErrorMsg('Erreur serveur. Vérifiez que ngrok est lancé.');
+        return;
+      }
 
       const data = await response.json();
 
@@ -95,14 +108,17 @@ export default function SignupPage({ navigation }) {
       navigation.navigate('Login');
 
     } catch (error) {
-      setErrorMsg(
-        'Impossible de contacter le serveur.\nVérifie que le backend est lancé et que tu es sur le même WiFi.'
-      );
-      console.error(error);
+      console.error('Signup error:', error);
+      if (error.message?.includes('Network request failed')) {
+        setErrorMsg('Impossible de joindre le serveur. Vérifiez que ngrok est lancé.');
+      } else {
+        setErrorMsg(`Erreur : ${error.message}`);
+      }
     }
   };
 
-  const renderInput = (label, value, onChange, iconName, type, secure, fieldKey) => {
+  // ✅ FIX lisibilité : autoCapitalize adapté par type de champ
+  const renderInput = (label, value, onChange, iconName, type, secure, fieldKey, isName = false) => {
     const focused = focusField === fieldKey;
     return (
       <View style={styles.inputGroup}>
@@ -121,10 +137,12 @@ export default function SignupPage({ navigation }) {
             value={value}
             onChangeText={(v) => { onChange(v); clearError(); }}
             placeholder={label}
-            placeholderTextColor="#C4B5FD"
+            placeholderTextColor="#A78BFA"
             keyboardType={type || 'default'}
             secureTextEntry={secure || false}
-            autoCapitalize={type === 'email-address' ? 'none' : 'sentences'}
+            // ✅ FIX : 'words' pour les noms, 'none' pour email/password
+            autoCapitalize={isName ? 'words' : 'none'}
+            autoCorrect={false}
             onFocus={() => setFocusField(fieldKey)}
             onBlur={() => setFocusField(null)}
             underlineColorAndroid="transparent"
@@ -137,8 +155,6 @@ export default function SignupPage({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-
-      {/* ✅ FIX ANDROID : pas de KeyboardAvoidingView, ScrollView direct */}
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -147,13 +163,11 @@ export default function SignupPage({ navigation }) {
       >
         <View style={styles.card}>
 
-          {/* Bouton retour */}
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={16} color={COLORS.primary} />
             <Text style={styles.backText}>Retour</Text>
           </TouchableOpacity>
 
-          {/* Brand */}
           <View style={styles.brand}>
             <View style={styles.brandIcon}>
               <Ionicons name="shield-checkmark" size={20} color={COLORS.white} />
@@ -163,7 +177,6 @@ export default function SignupPage({ navigation }) {
             </Text>
           </View>
 
-          {/* Titre */}
           <View style={styles.header}>
             <Text style={styles.title}>
               {'Creer un '}<Text style={styles.titleAccent}>{'compte'}</Text>
@@ -173,35 +186,27 @@ export default function SignupPage({ navigation }) {
             </Text>
           </View>
 
-          {/* Alerte erreur */}
           {!!errorMsg && (
             <View style={[styles.alert, styles.alertError]}>
               <Text style={styles.alertText}>{errorMsg}</Text>
             </View>
           )}
 
-          {/* Profil parent */}
           <Text style={styles.sectionTitle}>Votre profil</Text>
           <View style={styles.roleGrid}>
             <View style={[styles.roleCard, styles.roleCardActive]}>
-              <Ionicons
-                name="people-outline"
-                size={22}
-                color={COLORS.primary}
-                style={{ marginBottom: 5 }}
-              />
+              <Ionicons name="people-outline" size={22} color={COLORS.primary} style={{ marginBottom: 5 }} />
               <Text style={[styles.roleText, styles.roleTextActive]}>PARENT</Text>
             </View>
           </View>
 
-          {/* Prenom + Nom côte à côte */}
+          {/* ✅ isName=true pour prenom/nom → autoCapitalize="words" */}
           <View style={styles.row}>
-            {renderInput('Prenom', prenom, setPrenom, 'person-outline', 'default', false, 'prenom')}
+            {renderInput('Prenom', prenom, setPrenom, 'person-outline', 'default', false, 'prenom', true)}
             <View style={{ width: 10 }} />
-            {renderInput('Nom', nom, setNom, 'person-outline', 'default', false, 'nom')}
+            {renderInput('Nom', nom, setNom, 'person-outline', 'default', false, 'nom', true)}
           </View>
 
-          {/* Champs pleine largeur */}
           <View style={styles.fullField}>
             {renderInput('Adresse e-mail', email, setEmail, 'mail-outline', 'email-address', false, 'email')}
           </View>
@@ -212,16 +217,10 @@ export default function SignupPage({ navigation }) {
             {renderInput('Confirmer le mot de passe', confirmPassword, setConfirmPassword, 'lock-closed-outline', 'default', true, 'conf')}
           </View>
 
-          {/* Dropdown enfants autistes */}
           <View style={styles.fullField}>
             <Text style={styles.inputLabel}>{"Nombre d'enfants autistes"}</Text>
             <View style={styles.pickerWrapper}>
-              <Ionicons
-                name="puzzle-outline"
-                size={18}
-                color="#A78BFA"
-                style={styles.inputIcon}
-              />
+              <Ionicons name="puzzle-outline" size={18} color="#A78BFA" style={styles.inputIcon} />
               <Picker
                 selectedValue={nbEnfants}
                 onValueChange={(v) => { setNbEnfants(v); clearError(); }}
@@ -235,14 +234,13 @@ export default function SignupPage({ navigation }) {
                     key={opt.value}
                     label={opt.label}
                     value={opt.value}
-                    color={opt.value === '' ? '#C4B5FD' : '#4C1D95'}
+                    color={opt.value === '' ? '#A78BFA' : '#1A1035'}  // ✅ FIX lisibilité
                   />
                 ))}
               </Picker>
             </View>
           </View>
 
-          {/* Switch conditions */}
           <View style={styles.termsRow}>
             <Switch
               value={accepted}
@@ -258,7 +256,6 @@ export default function SignupPage({ navigation }) {
             </Text>
           </View>
 
-          {/* Bouton s'inscrire */}
           <TouchableOpacity
             style={[styles.primaryButton, !accepted && styles.buttonDisabled]}
             onPress={handleSignup}
@@ -266,12 +263,7 @@ export default function SignupPage({ navigation }) {
             activeOpacity={0.85}
           >
             <Text style={styles.buttonText}>{"S'inscrire"}</Text>
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color={COLORS.white}
-              style={{ marginLeft: 7 }}
-            />
+            <Ionicons name="arrow-forward" size={18} color={COLORS.white} style={{ marginLeft: 7 }} />
           </TouchableOpacity>
 
           <View style={styles.divider} />

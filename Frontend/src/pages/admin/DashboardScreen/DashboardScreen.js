@@ -7,6 +7,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import AdminLayout from '../../../components/Navigation/AdminNavigation';
 import { COLORS, GLASS, gradients, shadow } from '../../../theme';
 import S from './DashboardStyles';
@@ -114,44 +115,50 @@ const BarChart = () => {
   );
 };
 
-// ── LineChart simplifié (Évolution) ──────────────────────────────────────────
+// ── LineChart corrigé — utilise react-native-svg au lieu de balises HTML svg ──
 const LineChart = () => {
-  const DATA   = [20, 32, 28, 45, 38, 55, 48, 62, 58, 70, 65, 80];
-  const MONTHS = ['Jan','Fév','Mar','Avr','Mai','Juin','Jul','Aoû','Sep','Oct','Nov','Déc'];
-  const chartW = width - 96;
-  const chartH = 90;
-  const maxV   = Math.max(...DATA);
-  const pts    = DATA.map((v, i) => ({
+  const DATA    = [20, 32, 28, 45, 38, 55, 48, 62, 58, 70, 65, 80];
+  const chartW  = width - 96;
+  const chartH  = 90;
+  const maxV    = Math.max(...DATA);
+
+  const pts = DATA.map((v, i) => ({
     x: (i / (DATA.length - 1)) * chartW,
     y: chartH - (v / maxV) * chartH,
   }));
-  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const areaD = `${pathD} L${pts[pts.length-1].x} ${chartH} L0 ${chartH} Z`;
-  const anim  = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: false }).start();
-  }, []);
+  const pathD = pts
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(' ');
+
+  const areaD = `${pathD} L${pts[pts.length - 1].x} ${chartH} L0 ${chartH} Z`;
 
   return (
     <View style={{ paddingHorizontal: 4 }}>
-      <View style={{ height: chartH + 16 }}>
-        <svg width={chartW} height={chartH + 4} style={{ overflow: 'visible' }}>
-          <defs>
-            <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={areaD} fill="url(#lg)" />
-          <path d={pathD} fill="none" stroke="#8B5CF6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          {pts.map((p, i) => i % 3 === 0 && (
-            <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#8B5CF6" />
-          ))}
-        </svg>
-      </View>
+      <Svg width={chartW} height={chartH + 4}>
+        <Defs>
+          <SvgLinearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.3" />
+            <Stop offset="100%" stopColor="#8B5CF6" stopOpacity="0" />
+          </SvgLinearGradient>
+        </Defs>
+        <Path d={areaD} fill="url(#lg)" />
+        <Path
+          d={pathD}
+          fill="none"
+          stroke="#8B5CF6"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {pts.map((p, i) =>
+          i % 3 === 0 ? (
+            <Circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#8B5CF6" />
+          ) : null
+        )}
+      </Svg>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
-        {['Jan','Mar','Mai','Juil','Sep','Nov'].map(m => (
+        {['Jan', 'Mar', 'Mai', 'Juil', 'Sep', 'Nov'].map(m => (
           <Text key={m} style={S.chartLabel}>{m}</Text>
         ))}
       </View>
@@ -191,7 +198,7 @@ export default function DashboardScreen() {
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1.3 }}
             style={{ overflow: 'hidden', paddingBottom: 36 }}
           >
-            {/* Blobs déco — identiques au HomeScreen */}
+            {/* Blobs déco */}
             {[
               { left: -90,        top: 40,      w: 320, h: 320, r: 160, color: '#6D28D9', op: 0.45, sx: 1.5 },
               { right: -50,       top: 80,      w: 240, h: 240, r: 120, color: '#10B981', op: 0.13 },
@@ -223,7 +230,6 @@ export default function DashboardScreen() {
                 <Text style={S.heroTitle}>
                   Tableau de <Text style={S.heroAccent}>bord</Text>
                 </Text>
-                {/* Pill statut */}
                 <View style={S.heroPill}>
                   <View style={S.heroPillDot} />
                   <Text style={S.heroPillText}>Administration Centrale · En ligne</Text>
@@ -268,9 +274,7 @@ export default function DashboardScreen() {
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                   style={S.kpiGradient}
                 >
-                  {/* shimmer */}
                   <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: GLASS.dark.shimmer }} />
-                  {/* orb */}
                   <View style={{ position: 'absolute', right: -18, top: -18, width: 120, height: 120, borderRadius: 60, backgroundColor: GLASS.dark.bg }} />
 
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -284,7 +288,6 @@ export default function DashboardScreen() {
                     </View>
                   </View>
 
-                  {/* 4 métriques inline */}
                   <View style={{ flexDirection: 'row', gap: 0, marginTop: 20 }}>
                     {KPI_DATA.map((k, i) => (
                       <View key={i} style={[S.kpiMetric, i < KPI_DATA.length - 1 && S.kpiMetricBorder]}>
@@ -324,7 +327,6 @@ export default function DashboardScreen() {
               </View>
 
               <View style={S.glassCard}>
-                {/* shimmer */}
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(139,92,246,0.15)', borderTopLeftRadius: 22, borderTopRightRadius: 22 }} />
 
                 {GENRE_DATA.map((g, i) => (
@@ -333,7 +335,6 @@ export default function DashboardScreen() {
                       <Text style={S.genreLabel}>{g.label}</Text>
                       <Text style={[S.genreVal, { color: g.color }]}>{g.val}</Text>
                     </View>
-                    {/* Barre de progression */}
                     <View style={S.genreBarBg}>
                       <Animated.View style={[
                         S.genreBarFill,
@@ -404,7 +405,6 @@ export default function DashboardScreen() {
               {RECENT.map((a, i) => (
                 <TouchableOpacity key={i} activeOpacity={0.82}>
                   <View style={[S.actCard, i < RECENT.length - 1 && { marginBottom: 9 }]}>
-                    {/* Avatar initiales */}
                     <View style={[S.actAvatar, { backgroundColor: a.color }]}>
                       <Text style={S.actInitials}>{a.initials}</Text>
                     </View>

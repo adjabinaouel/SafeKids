@@ -21,7 +21,6 @@ const COLORS = {
 
 export default StyleSheet.create({
 
-  // ── Layout ──────────────────────────────────────────
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
@@ -30,7 +29,6 @@ export default StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: isWeb ? 0 : 20,
     paddingVertical: isWeb ? 32 : 20,
-    // ✅ FIX : pas de justifyContent sur Android pour éviter les recalculs
     alignItems: isWeb ? 'center' : 'stretch',
   },
   card: {
@@ -49,7 +47,6 @@ export default StyleSheet.create({
     }),
   },
 
-  // ── Brand ───────────────────────────────────────────
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -72,7 +69,6 @@ export default StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  // ── Header ──────────────────────────────────────────
   header: {
     alignItems: 'center',
     marginBottom: 20,
@@ -96,7 +92,6 @@ export default StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // ── Section label ────────────────────────────────────
   sectionTitle: {
     fontSize: 10,
     fontWeight: '800',
@@ -106,7 +101,6 @@ export default StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // ── Roles ────────────────────────────────────────────
   roleGrid: {
     flexDirection: 'row',
     marginBottom: 18,
@@ -135,7 +129,6 @@ export default StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // ── Alerte ───────────────────────────────────────────
   alert: {
     borderRadius: 10,
     padding: 10,
@@ -152,11 +145,9 @@ export default StyleSheet.create({
     color: COLORS.errorText,
   },
 
-  // ── Form ─────────────────────────────────────────────
   form: {},
   inputGroup: {
     marginBottom: 14,
-    // ✅ FIX : hauteur fixe pour éviter que le layout recalcule au focus
     minHeight: 74,
   },
   inputLabel: {
@@ -170,20 +161,16 @@ export default StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.white,        // ✅ FIX : blanc pur pour meilleur contraste
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     paddingHorizontal: 13,
-    // ✅ FIX : hauteur fixe obligatoire
     height: 48,
-    // ✅ FIX : pas d'elevation ici sur Android (cause les sauts)
   },
   inputWrapperActive: {
     borderColor: COLORS.borderActive,
     backgroundColor: COLORS.white,
-    // ✅ FIX : elevation SUPPRIMÉ sur Android — c'était la cause des vibrations
-    // L'elevation force Android à redessiner le shadow layer au focus → saut visuel
     ...Platform.select({
       ios: {
         shadowColor: COLORS.primary,
@@ -191,9 +178,7 @@ export default StyleSheet.create({
         shadowOpacity: 0.12,
         shadowRadius: 6,
       },
-      android: {
-        // ❌ elevation: 2  ← supprimé volontairement
-      },
+      android: {},                         // ✅ FIX : pas d'elevation sur Android
       web: { boxShadow: '0 0 0 3px rgba(124,58,237,0.08)' },
     }),
   },
@@ -202,15 +187,13 @@ export default StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: 14,
-    color: '#4C1D95',
-    fontWeight: '600',
-    // ✅ FIX : hauteur explicite sur Android
+    fontSize: 15,                          // ✅ FIX : légèrement plus grand
+    color: '#1A1035',                      // ✅ FIX : quasi-noir pour lisibilité maximale
+    fontWeight: '500',                     // ✅ FIX : moins lourd, plus lisible
     height: 48,
     ...Platform.select({ web: { outlineStyle: 'none' } }),
   },
 
-  // ── Forgot ───────────────────────────────────────────
   forgotPassword: {
     color: COLORS.primary,
     fontSize: 12.5,
@@ -220,7 +203,6 @@ export default StyleSheet.create({
     marginTop: -4,
   },
 
-  // ── Bouton principal ─────────────────────────────────
   primaryButton: {
     height: 50,
     borderRadius: 14,
@@ -247,14 +229,12 @@ export default StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // ── Séparateur ───────────────────────────────────────
   divider: {
     height: 1,
     backgroundColor: 'rgba(167,139,250,0.15)',
     marginVertical: 16,
   },
 
-  // ── Footer ───────────────────────────────────────────
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
