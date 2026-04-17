@@ -1,138 +1,338 @@
 // src/pages/admin/ComptesScreen/ComptesScreen.js
-/**
- * LOGIQUE SELON DIAGRAMME DE CAS D'UTILISATION :
- *
- * Médecins : Créer · Bloquer · Débloquer · Modifier MDP · Supprimer
- * Parents  : Bloquer · Débloquer · Supprimer  (PAS de création — le parent crée lui-même son compte)
- *
- * MongoDB : utilise _id (ObjectId) au lieu de id
- */
+// ✅ CORRECTIONS :
+//   1. Spécialités → liste fixe hardcodée côté mobile, ZERO dépendance BDD
+//   2. Téléphone   → validation 10 chiffres, 05/06/07, formatage automatique
+//   3. Disponibilité → nouveau sélecteur multi-jours (Samedi→Vendredi)
+//   4. Création médecin → 100% fonctionnel
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  Modal, StatusBar, Alert, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Modal, StatusBar, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AdminLayout from '../../../components/Navigation/AdminNavigation';
 import { COLORS } from '../../../theme';
 import S from './ComptesStyles';
 
-// ─── CONFIG API MongoDB ────────────────────────────────────────────────────────
-const API_BASE = 'http://YOUR_BACKEND_URL/api';
+// ── URL BACKEND ─────────────────────────────────────────────────────────────
+const BASE_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+// Pour vrai téléphone, remplacez par votre URL ngrok :
+// const BASE_URL = 'https://xxxx.ngrok-free.app';
 
-// ─── Status helpers ────────────────────────────────────────────────────────────
+// ── LISTE FIXE DES SPÉCIALITÉS (plus de dépendance BDD) ─────────────────────
+const SPECIALITES = [
+  'Psychologue',
+  'Pédopsychiatrie',
+  'Orthophonie',
+  'Psychomotricien',
+  'Psychiatre',
+  'Neuropédiatrie',
+  'Ergothérapie',
+  'ABA Thérapeute',
+];
+
+// ── JOURS DE LA SEMAINE (ordre algérien : Samedi = premier jour) ─────────────
+const JOURS = ['Samedi', 'Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+
+// ── Status ──────────────────────────────────────────────────────────────────
 const STATUS = {
   actif:   { label: 'Actif',      bg: '#D1FAE5', color: '#065F46' },
   attente: { label: 'En attente', bg: '#FEF3C7', color: '#92400E' },
   bloque:  { label: 'Bloqué',     bg: '#FEE2E2', color: '#991B1B' },
 };
 
-// ─── Données mock ──────────────────────────────────────────────────────────────
-const MOCK_MEDECINS = [
-  { _id: 'm1', nom: 'Dr. Jean Dupont',   email: 'j.dupont@med.dz',   specialite: 'Neurologie',      telephone: '0551 00 11 22', patients: 8,  status: 'actif',   initials: 'JD', color: '#8B5CF6' },
-  { _id: 'm2', nom: 'Dr. Leila Hadj',    email: 'l.hadj@med.dz',     specialite: 'Pédiatrie',       telephone: '0661 33 44 55', patients: 12, status: 'actif',   initials: 'LH', color: '#06B6D4' },
-  { _id: 'm3', nom: 'Dr. Yacine Bouzid', email: 'y.bouzid@med.dz',   specialite: 'Orthophonie',     telephone: '0771 66 77 88', patients: 0,  status: 'attente', initials: 'YB', color: '#F59E0B' },
-  { _id: 'm4', nom: 'Dr. Sarah Cohen',   email: 's.cohen@med.dz',    specialite: 'Psychomotricité', telephone: '0551 99 00 11', patients: 5,  status: 'actif',   initials: 'SC', color: '#EC4899' },
-  { _id: 'm5', nom: 'Dr. Omar Ferhat',   email: 'o.ferhat@med.dz',   specialite: 'Neurologie',      telephone: '0661 22 33 44', patients: 3,  status: 'bloque',  initials: 'OF', color: '#64748B' },
-];
+const getInitials = (prenom, nom) => {
+  const p = (prenom || '').trim()[0] || '';
+  const n = (nom    || '').trim()[0] || '';
+  return (p + n).toUpperCase() || '?';
+};
+const AVATAR_COLORS = ['#8B5CF6','#06B6D4','#F59E0B','#EC4899','#2563EB','#10B981','#F97316'];
+const avatarColor   = (id) => AVATAR_COLORS[(id?.charCodeAt(0) || 0) % AVATAR_COLORS.length];
 
-const MOCK_PARENTS = [
-  { _id: 'p1', nom: 'Sara Benali',    email: 'sara.b@email.dz',  telephone: '0551 23 45 67', enfants: 2, status: 'actif',   initials: 'SB', color: '#2563EB', dateInscription: '12 Jan 2024', medecin: 'Dr. Dupont' },
-  { _id: 'p2', nom: 'Marie Martin',   email: 'marie.m@email.dz', telephone: '0661 34 56 78', enfants: 1, status: 'attente', initials: 'MM', color: '#F59E0B', dateInscription: '28 Fév 2024', medecin: 'Dr. Hadj' },
-  { _id: 'p3', nom: 'Karim Zerhouni', email: 'k.zerh@email.dz',  telephone: '0771 45 67 89', enfants: 3, status: 'actif',   initials: 'KZ', color: '#10B981', dateInscription: '05 Mar 2024', medecin: 'Dr. Cohen' },
-];
+// ── Validation téléphone algérien ────────────────────────────────────────────
+// 10 chiffres exactement, commence par 05, 06 ou 07
+function validateTel(raw) {
+  if (!raw || raw.trim() === '') return 'Le téléphone est obligatoire pour un médecin.';
+  const cleaned = raw.replace(/[\s\-\.]/g, '');
+  if (!/^\d{10}$/.test(cleaned))  return 'Exactement 10 chiffres requis (ex: 0550001234).';
+  if (!/^0[567]/.test(cleaned))   return 'Doit commencer par 05, 06 ou 07.';
+  return null; // OK
+}
 
-// ─── Service API ───────────────────────────────────────────────────────────────
-const ApiService = {
-  // ── Médecins ────────────────────────────────────────────────────
-  getMedecins: async () => {
-    try {
-      const res = await fetch(`${API_BASE}/medecins`);
-      return res.ok ? await res.json() : MOCK_MEDECINS;
-    } catch { return MOCK_MEDECINS; }
-  },
-  createMedecin: async (data) => {
-    try {
-      const res = await fetch(`${API_BASE}/medecins`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
-      });
-      return res.ok ? await res.json() : { ...data, _id: Date.now().toString() };
-    } catch { return { ...data, _id: Date.now().toString() }; }
-  },
-  updateMedecin: async (id, data) => {
-    try {
-      const res = await fetch(`${API_BASE}/medecins/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
-      });
-      return res.ok ? await res.json() : { ...data, _id: id };
-    } catch { return { ...data, _id: id }; }
-  },
-  setMedecinStatus: async (id, status) => {
-    try {
-      const res = await fetch(`${API_BASE}/medecins/${id}/status`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
-      });
-      return res.ok ? await res.json() : { _id: id, status };
-    } catch { return { _id: id, status }; }
-  },
-  deleteMedecin: async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/medecins/${id}`, { method: 'DELETE' });
-      return res.ok;
-    } catch { return true; }
-  },
+// ── Formater automatiquement le téléphone : 05 50 00 12 34 ───────────────────
+function formatTel(raw) {
+  const digits = raw.replace(/\D/g, '').slice(0, 10);
+  return digits.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+}
 
-  // ── Parents (pas de création) ────────────────────────────────────
-  getParents: async () => {
-    try {
-      const res = await fetch(`${API_BASE}/parents`);
-      return res.ok ? await res.json() : MOCK_PARENTS;
-    } catch { return MOCK_PARENTS; }
-  },
-  setParentStatus: async (id, status) => {
-    try {
-      const res = await fetch(`${API_BASE}/parents/${id}/status`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
-      });
-      return res.ok ? await res.json() : { _id: id, status };
-    } catch { return { _id: id, status }; }
-  },
-  deleteParent: async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/parents/${id}`, { method: 'DELETE' });
-      return res.ok;
-    } catch { return true; }
-  },
+// ── Fetch authentifié ────────────────────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  const token = await AsyncStorage.getItem('userToken');
+  if (!token) throw new Error('Session expirée. Reconnectez-vous.');
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type':            'application/json',
+      'Authorization':           `Bearer ${token}`,
+      'ngrok-skip-browser-warning': 'true',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Erreur ${res.status}`);
+  return data;
+}
+
+const Api = {
+  getMedecins:          ()        => apiFetch('/api/medecins'),
+  getParents:           ()        => apiFetch('/api/parents'),
+  createMedecin:        (data)    => apiFetch('/api/medecins', { method: 'POST', body: JSON.stringify(data) }),
+  updateMedecin:        (id, d)   => apiFetch(`/api/medecins/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  setMedecinStatus:     (id, s)   => apiFetch(`/api/medecins/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: s }) }),
+  resetMedecinPassword: (id, pwd) => apiFetch(`/api/medecins/${id}/reset-password`, { method: 'PATCH', body: JSON.stringify({ password: pwd }) }),
+  deleteMedecin:        (id)      => apiFetch(`/api/medecins/${id}`, { method: 'DELETE' }),
+  setParentStatus:      (id, s)   => apiFetch(`/api/parents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: s }) }),
+  deleteParent:         (id)      => apiFetch(`/api/parents/${id}`, { method: 'DELETE' }),
 };
 
-// ─── Carte Médecin ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// DROPDOWN SPÉCIALITÉ — liste fixe, zéro appel réseau
+// ══════════════════════════════════════════════════════════════════════════════
+const SpecialiteDropdown = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ marginBottom: 4 }}>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => setOpen(v => !v)}
+        style={{
+          borderWidth:      1.5,
+          borderColor:      open ? '#7C3AED' : (value ? '#7C3AED' : '#E5E7EB'),
+          borderRadius:     12,
+          paddingHorizontal: 14,
+          paddingVertical:  13,
+          backgroundColor:  '#F9FAFB',
+          flexDirection:    'row',
+          alignItems:       'center',
+          justifyContent:   'space-between',
+          marginBottom:     open ? 0 : 12,
+        }}
+      >
+        <Text style={{ fontSize: 14, color: value ? '#1F2937' : '#9CA3AF', flex: 1 }}>
+          {value || 'Sélectionner une spécialité *'}
+        </Text>
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+      </TouchableOpacity>
+
+      {open && (
+        <View style={{
+          borderWidth:     1.5,
+          borderColor:     '#7C3AED',
+          borderRadius:    12,
+          backgroundColor: '#fff',
+          maxHeight:       240,
+          marginBottom:    12,
+          overflow:        'hidden',
+          elevation:       8,
+          shadowColor:     '#7C3AED',
+          shadowOffset:    { width: 0, height: 4 },
+          shadowOpacity:   0.18,
+          shadowRadius:    12,
+        }}>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {SPECIALITES.map((nom, i) => {
+              const sel = value === nom;
+              return (
+                <TouchableOpacity
+                  key={nom}
+                  activeOpacity={0.7}
+                  onPress={() => { onChange(nom); setOpen(false); }}
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical:   13,
+                    backgroundColor:   sel ? '#EDE9FE' : '#fff',
+                    borderBottomWidth: i < SPECIALITES.length - 1 ? 0.5 : 0,
+                    borderBottomColor: '#F3F4F6',
+                    flexDirection:     'row',
+                    alignItems:        'center',
+                    gap:               10,
+                  }}
+                >
+                  <View style={{
+                    width: 18, height: 18, borderRadius: 9,
+                    borderWidth: 2,
+                    borderColor:     sel ? '#7C3AED' : '#D1D5DB',
+                    backgroundColor: sel ? '#7C3AED' : 'transparent',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {sel && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />}
+                  </View>
+                  <Text style={{ fontSize: 14, color: sel ? '#7C3AED' : '#1F2937', fontWeight: sel ? '700' : '400' }}>
+                    {nom}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SÉLECTEUR MULTI-JOURS DISPONIBILITÉ
+// ══════════════════════════════════════════════════════════════════════════════
+const DisponibiliteSelector = ({ value = [], onChange }) => {
+  // value : tableau de strings, ex: ['Lundi', 'Mercredi']
+  const toggle = (jour) => {
+    if (value.includes(jour)) {
+      onChange(value.filter(j => j !== jour));
+    } else {
+      onChange([...value, jour]);
+    }
+  };
+
+  const label = value.length === 0
+    ? 'Aucun jour sélectionné'
+    : value.length === 7
+      ? 'Tous les jours'
+      : value.join(', ');
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {/* Label résumé */}
+      <View style={{
+        borderWidth: 1.5, borderColor: value.length > 0 ? '#7C3AED' : '#E5E7EB',
+        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+        backgroundColor: '#F9FAFB', marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8,
+      }}>
+        <Feather name="calendar" size={15} color={value.length > 0 ? '#7C3AED' : '#9CA3AF'} />
+        <Text style={{ fontSize: 13, color: value.length > 0 ? '#1F2937' : '#9CA3AF', flex: 1 }} numberOfLines={1}>
+          {label}
+        </Text>
+        {value.length > 0 && (
+          <View style={{ backgroundColor: '#7C3AED', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+            <Text style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>{value.length}j</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Grille des jours */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {JOURS.map(jour => {
+          const sel = value.includes(jour);
+          return (
+            <TouchableOpacity
+              key={jour}
+              activeOpacity={0.75}
+              onPress={() => toggle(jour)}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical:   8,
+                borderRadius:      20,
+                borderWidth:       1.5,
+                borderColor:       sel ? '#7C3AED' : '#E5E7EB',
+                backgroundColor:   sel ? '#7C3AED' : '#F9FAFB',
+                flexDirection:     'row',
+                alignItems:        'center',
+                gap:               5,
+              }}
+            >
+              {sel && <Feather name="check" size={11} color="#fff" />}
+              <Text style={{ fontSize: 12, fontWeight: sel ? '700' : '500', color: sel ? '#fff' : '#6B7280' }}>
+                {jour}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CHAMP TÉLÉPHONE avec validation et formatage en temps réel
+// ══════════════════════════════════════════════════════════════════════════════
+const TelField = ({ value, onChange, required = true }) => {
+  const [touched, setTouched] = useState(false);
+  const errMsg = touched ? validateTel(value) : null;
+  const isOk   = !validateTel(value) && value.length > 0;
+
+  return (
+    <View style={{ marginBottom: 2 }}>
+      <Text style={S.fieldLabel}>Téléphone{required ? ' *' : ''}</Text>
+      <View style={{ position: 'relative' }}>
+        <TextInput
+          style={[
+            S.fieldInput,
+            errMsg  ? { borderColor: '#EF4444', borderWidth: 1.5 } : {},
+            isOk    ? { borderColor: '#10B981', borderWidth: 1.5 } : {},
+          ]}
+          value={value}
+          onChangeText={v => onChange(formatTel(v))}
+          onBlur={() => setTouched(true)}
+          placeholder="05 XX XX XX XX"
+          placeholderTextColor={COLORS.textMuted}
+          keyboardType="phone-pad"
+          maxLength={14} // "05 50 00 12 34" = 14 chars avec espaces
+        />
+        {isOk && (
+          <View style={{ position: 'absolute', right: 12, top: 0, bottom: 16, justifyContent: 'center' }}>
+            <Feather name="check-circle" size={16} color="#10B981" />
+          </View>
+        )}
+      </View>
+      {errMsg ? (
+        <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', marginBottom: 8, marginTop: -4 }}>
+          <Feather name="alert-circle" size={12} color="#EF4444" />
+          <Text style={{ fontSize: 11, color: '#EF4444', flex: 1 }}>{errMsg}</Text>
+        </View>
+      ) : (
+        <Text style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8, marginTop: -4 }}>
+          Format : 05/06/07 + 8 chiffres
+        </Text>
+      )}
+    </View>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEDECIN CARD
+// ══════════════════════════════════════════════════════════════════════════════
 const MedecinCard = ({ item, onApprove, onBlock, onUnblock, onDelete, onEdit, onResetPwd }) => {
-  const st = STATUS[item.status];
+  const st    = STATUS[item.status] || STATUS.actif;
+  const color = avatarColor(item._id);
+  const dispo = Array.isArray(item.disponibilite)
+    ? item.disponibilite.join(', ')
+    : (item.disponibilite || '');
+
   return (
     <View style={S.accountCard}>
       <View style={S.accountTop}>
-        <View style={[S.accountAvatar, { backgroundColor: item.color }]}>
-          <Text style={S.accountInitials}>{item.initials}</Text>
+        <View style={[S.accountAvatar, { backgroundColor: color }]}>
+          <Text style={S.accountInitials}>{getInitials(item.prenom, item.nom)}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={S.accountName}>{item.nom}</Text>
-          <Text style={S.accountMeta}>{item.specialite} · {item.patients} patient{item.patients !== 1 ? 's' : ''}</Text>
+          <Text style={S.accountName}>{item.prenom} {item.nom}</Text>
+          <Text style={S.accountMeta}>{item.specialite || '—'} · {item.patients ?? 0} patient{(item.patients ?? 0) !== 1 ? 's' : ''}</Text>
           <Text style={[S.accountMeta, { marginTop: 2 }]}>{item.email}</Text>
+          {!!item.telephone && <Text style={[S.accountMeta, { marginTop: 2 }]}>📞 {item.telephone}</Text>}
+          {!!dispo && <Text style={[S.accountMeta, { marginTop: 2, color: '#7C3AED' }]}>📅 {dispo}</Text>}
         </View>
         <View style={[S.accountBadge, { backgroundColor: st.bg }]}>
           <Text style={[S.accountBadgeTxt, { color: st.color }]}>{st.label}</Text>
         </View>
       </View>
-
       <View style={S.accountDivider} />
-
-      {/* Ligne 1 : actions de statut */}
       <View style={[S.accountActions, { paddingBottom: 4 }]}>
         {item.status === 'attente' && (
           <TouchableOpacity style={[S.actionBtn, S.actionBtnApprove]} onPress={() => onApprove(item._id)}>
-            <Feather name="check-circle" size={13} color={COLORS.successText} />
+            <Feather name="check-circle" size={13} color="#065F46" />
             <Text style={[S.actionBtnText, S.actionBtnApproveTxt]}>Approuver</Text>
           </TouchableOpacity>
         )}
@@ -144,7 +344,7 @@ const MedecinCard = ({ item, onApprove, onBlock, onUnblock, onDelete, onEdit, on
         )}
         {item.status === 'bloque' && (
           <TouchableOpacity style={[S.actionBtn, S.actionBtnApprove]} onPress={() => onUnblock(item._id)}>
-            <Feather name="unlock" size={13} color={COLORS.successText} />
+            <Feather name="unlock" size={13} color="#065F46" />
             <Text style={[S.actionBtnText, S.actionBtnApproveTxt]}>Débloquer</Text>
           </TouchableOpacity>
         )}
@@ -153,12 +353,10 @@ const MedecinCard = ({ item, onApprove, onBlock, onUnblock, onDelete, onEdit, on
           <Text style={S.actionBtnText}>Modifier</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Ligne 2 : MDP + Supprimer */}
       <View style={[S.accountActions, { paddingTop: 0, paddingBottom: 12 }]}>
         <TouchableOpacity style={[S.actionBtn, { flex: 1.5 }]} onPress={() => onResetPwd(item)}>
-          <Feather name="key" size={13} color={COLORS.primary || '#7C3AED'} />
-          <Text style={[S.actionBtnText, { color: COLORS.primary || '#7C3AED' }]}>Réinitialiser MDP</Text>
+          <Feather name="key" size={13} color="#7C3AED" />
+          <Text style={[S.actionBtnText, { color: '#7C3AED' }]}>Réinitialiser MDP</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[S.actionBtn, S.actionBtnDanger]} onPress={() => onDelete(item._id)}>
           <Feather name="trash-2" size={13} color="#991B1B" />
@@ -169,48 +367,42 @@ const MedecinCard = ({ item, onApprove, onBlock, onUnblock, onDelete, onEdit, on
   );
 };
 
-// ─── Carte Parent ─────────────────────────────────────────────────────────────
-// Selon diagramme : Bloquer · Débloquer · Supprimer (PAS de création ni modification)
+// ══════════════════════════════════════════════════════════════════════════════
+// PARENT CARD
+// ══════════════════════════════════════════════════════════════════════════════
 const ParentCard = ({ item, onBlock, onUnblock, onDelete }) => {
-  const st = STATUS[item.status];
+  const st    = STATUS[item.status] || STATUS.actif;
+  const color = avatarColor(item._id);
   return (
     <View style={S.accountCard}>
       <View style={S.accountTop}>
-        <View style={[S.accountAvatar, { backgroundColor: item.color }]}>
-          <Text style={S.accountInitials}>{item.initials}</Text>
+        <View style={[S.accountAvatar, { backgroundColor: color }]}>
+          <Text style={S.accountInitials}>{getInitials(item.prenom, item.nom)}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={S.accountName}>{item.nom}</Text>
+          <Text style={S.accountName}>{item.prenom} {item.nom}</Text>
           <Text style={S.accountMeta}>{item.email}</Text>
           <Text style={[S.accountMeta, { marginTop: 2 }]}>
-            {item.enfants} enfant{item.enfants !== 1 ? 's' : ''} · Médecin : {item.medecin}
+            {item.enfants ?? 0} enfant{(item.enfants ?? 0) !== 1 ? 's' : ''}
+            {item.medecin ? ` · ${item.medecin}` : ''}
           </Text>
-          {item.dateInscription && (
-            <Text style={[S.accountMeta, { marginTop: 2, fontSize: 11 }]}>
-              Inscrit le {item.dateInscription}
-            </Text>
+          {!!item.telephone && <Text style={[S.accountMeta, { marginTop: 2 }]}>📞 {item.telephone}</Text>}
+          {!!item.dateInscription && (
+            <Text style={[S.accountMeta, { marginTop: 2, fontSize: 11 }]}>Inscrit le {item.dateInscription}</Text>
           )}
         </View>
         <View style={[S.accountBadge, { backgroundColor: st.bg }]}>
           <Text style={[S.accountBadgeTxt, { color: st.color }]}>{st.label}</Text>
         </View>
       </View>
-
       <View style={S.accountDivider} />
-
-      {/* Infobadge lecture seule */}
       <View style={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-          backgroundColor: '#EDE9FE', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-          alignSelf: 'flex-start' }}>
-          <Feather name="info" size={11} color={COLORS.primary || '#7C3AED'} />
-          <Text style={{ fontSize: 11, color: COLORS.primary || '#7C3AED', fontWeight: '600' }}>
-            Compte créé par le parent lui-même
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EDE9FE',
+          borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' }}>
+          <Feather name="info" size={11} color="#7C3AED" />
+          <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600' }}>Compte créé par le parent lui-même</Text>
         </View>
       </View>
-
-      {/* Actions : Bloquer / Débloquer + Supprimer */}
       <View style={[S.accountActions, { paddingTop: 8 }]}>
         {item.status === 'actif' && (
           <TouchableOpacity style={[S.actionBtn, S.actionBtnWarn]} onPress={() => onBlock(item._id)}>
@@ -220,13 +412,13 @@ const ParentCard = ({ item, onBlock, onUnblock, onDelete }) => {
         )}
         {item.status === 'bloque' && (
           <TouchableOpacity style={[S.actionBtn, S.actionBtnApprove]} onPress={() => onUnblock(item._id)}>
-            <Feather name="unlock" size={13} color={COLORS.successText} />
+            <Feather name="unlock" size={13} color="#065F46" />
             <Text style={[S.actionBtnText, S.actionBtnApproveTxt]}>Débloquer</Text>
           </TouchableOpacity>
         )}
         {item.status === 'attente' && (
           <TouchableOpacity style={[S.actionBtn, S.actionBtnApprove]} onPress={() => onUnblock(item._id)}>
-            <Feather name="check-circle" size={13} color={COLORS.successText} />
+            <Feather name="check-circle" size={13} color="#065F46" />
             <Text style={[S.actionBtnText, S.actionBtnApproveTxt]}>Valider</Text>
           </TouchableOpacity>
         )}
@@ -239,90 +431,197 @@ const ParentCard = ({ item, onBlock, onUnblock, onDelete }) => {
   );
 };
 
-// ─── Modal Médecin (création + édition) ───────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// MODAL MÉDECIN — Création / Modification
+// ══════════════════════════════════════════════════════════════════════════════
+const FORM_EMPTY = {
+  prenom: '', nom: '', email: '', specialite: '',
+  telephone: '', disponibilite: [], password: '',
+};
+
 const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
   const isEdit = !!editItem;
-  const EMPTY = { nom: '', email: '', specialite: '', telephone: '', password: '' };
-  const [form, setForm] = useState(EMPTY);
+  const [form,  setForm]  = useState(FORM_EMPTY);
+  const [showPwd, setShowPwd] = useState(false);
+  const scrollRef = useRef(null); // ✅ ref pour scroll vers champ actif
 
   useEffect(() => {
-    if (visible) setForm(editItem ? { ...editItem, password: '' } : EMPTY);
+    if (!visible) return;
+    if (editItem) {
+      setForm({
+        prenom:        editItem.prenom        || '',
+        nom:           editItem.nom           || '',
+        email:         editItem.email         || '',
+        specialite:    editItem.specialite    || '',
+        telephone:     editItem.telephone     || '',
+        disponibilite: Array.isArray(editItem.disponibilite) ? editItem.disponibilite : [],
+        password:      '',
+      });
+    } else {
+      setForm(FORM_EMPTY);
+    }
+    setShowPwd(false);
   }, [editItem, visible]);
 
-  const update = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  const handleSave = () => {
-    if (!form.nom.trim() || !form.email.trim()) {
-      Alert.alert('Champs requis', 'Le nom et l\'email sont obligatoires.');
-      return;
+  const submit = () => {
+    // ── Validation complète ──────────────────────────────────────────────────
+    if (!form.prenom.trim()) {
+      Alert.alert('Champ manquant', 'Le prénom est obligatoire.'); return;
     }
+    if (!form.nom.trim()) {
+      Alert.alert('Champ manquant', 'Le nom est obligatoire.'); return;
+    }
+    if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      Alert.alert('Email invalide', "Saisissez une adresse email valide."); return;
+    }
+    if (!form.specialite) {
+      Alert.alert('Champ manquant', 'Sélectionnez une spécialité.'); return;
+    }
+    const telErr = validateTel(form.telephone);
+    if (telErr) { Alert.alert('Téléphone invalide', telErr); return; }
+
     if (!isEdit && form.password.length < 6) {
-      Alert.alert('Mot de passe', 'Le mot de passe doit contenir au moins 6 caractères.');
-      return;
+      Alert.alert('Mot de passe trop court', 'Minimum 6 caractères.'); return;
     }
-    const colors = ['#8B5CF6', '#06B6D4', '#F59E0B', '#EC4899', '#2563EB', '#10B981'];
-    onSave({
-      ...form,
-      _id:      editItem?._id || null,
-      status:   editItem?.status || 'actif',
-      patients: editItem?.patients || 0,
-      initials: form.nom.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase(),
-      color:    editItem?.color || colors[Math.floor(Math.random() * colors.length)],
-    });
+
+    // Construire le payload
+    const payload = {
+      prenom:        form.prenom.trim(),
+      nom:           form.nom.trim(),
+      email:         form.email.trim().toLowerCase(),
+      specialite:    form.specialite,
+      telephone:     form.telephone.replace(/\s/g, ''), // envoyer sans espaces
+      disponibilite: form.disponibilite,
+    };
+    if (!isEdit) payload.password = form.password;
+    if (isEdit)  payload._id = editItem._id;
+
+    onSave(payload);
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={S.modalOverlay}>
+      {/* ✅ FIX CLAVIER Android + iOS */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0}
+        style={S.modalOverlay}
+      >
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={S.modalSheet}>
+        <View style={[S.modalSheet, { maxHeight: '95%' }]}>
           <View style={S.modalHandle} />
-          <Text style={S.modalTitle}>
-            {isEdit ? '✏️ Modifier le médecin' : '👨‍⚕️ Nouveau médecin'}
-          </Text>
+
+          <Text style={S.modalTitle}>{isEdit ? '✏️ Modifier le médecin' : '👨‍⚕️ Nouveau médecin'}</Text>
           <Text style={S.modalSub}>
-            {isEdit ? 'Modifiez les informations du compte médecin.' : 'Créez un compte pour un nouveau médecin.'}
+            {isEdit ? 'Mettez à jour les informations.' : 'Remplissez tous les champs obligatoires (*).'}
           </Text>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Text style={S.fieldLabel}>Nom complet *</Text>
-            <TextInput style={S.fieldInput} value={form.nom} onChangeText={v => update('nom', v)}
-              placeholder="Dr. Prénom Nom" placeholderTextColor={COLORS.textMuted} />
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+            contentContainerStyle={{ paddingBottom: 40 }}
+          >
+            {/* ── Prénom + Nom ── */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={S.fieldLabel}>Prénom *</Text>
+                <TextInput
+                  style={S.fieldInput} value={form.prenom}
+                  onChangeText={v => set('prenom', v)}
+                  placeholder="Prénom" placeholderTextColor={COLORS.textMuted}
+                  autoCapitalize="words"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={S.fieldLabel}>Nom *</Text>
+                <TextInput
+                  style={S.fieldInput} value={form.nom}
+                  onChangeText={v => set('nom', v)}
+                  placeholder="Nom" placeholderTextColor={COLORS.textMuted}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
 
+            {/* ── Email ── */}
             <Text style={S.fieldLabel}>Email *</Text>
-            <TextInput style={S.fieldInput} value={form.email} onChangeText={v => update('email', v)}
-              placeholder="email@exemple.dz" keyboardType="email-address" autoCapitalize="none"
-              placeholderTextColor={COLORS.textMuted} />
+            <TextInput
+              style={S.fieldInput} value={form.email}
+              onChangeText={v => set('email', v)}
+              placeholder="email@exemple.dz" keyboardType="email-address"
+              autoCapitalize="none" placeholderTextColor={COLORS.textMuted}
+              onFocus={e => scrollRef.current?.scrollTo({ y: 80, animated: true })}
+            />
 
-            <Text style={S.fieldLabel}>Téléphone</Text>
-            <TextInput style={S.fieldInput} value={form.telephone} onChangeText={v => update('telephone', v)}
-              placeholder="05XX XX XX XX" keyboardType="phone-pad" placeholderTextColor={COLORS.textMuted} />
+            {/* ── Téléphone ── */}
+            <TelField
+              value={form.telephone}
+              onChange={v => set('telephone', v)}
+              required
+            />
 
+            {/* ── Spécialité ── */}
             <Text style={S.fieldLabel}>Spécialité *</Text>
-            <TextInput style={S.fieldInput} value={form.specialite} onChangeText={v => update('specialite', v)}
-              placeholder="Ex: Neurologie pédiatrique" placeholderTextColor={COLORS.textMuted} />
+            <SpecialiteDropdown
+              value={form.specialite}
+              onChange={v => set('specialite', v)}
+            />
 
+            {/* ── Disponibilité ── */}
+            <Text style={S.fieldLabel}>Jours de disponibilité</Text>
+            <DisponibiliteSelector
+              value={form.disponibilite}
+              onChange={v => set('disponibilite', v)}
+            />
+
+            {/* ── Mot de passe (création seulement) ── */}
             {!isEdit && (
               <>
-                <Text style={S.fieldLabel}>Mot de passe temporaire *</Text>
-                <TextInput style={S.fieldInput} value={form.password} onChangeText={v => update('password', v)}
-                  placeholder="••••••••" secureTextEntry placeholderTextColor={COLORS.textMuted} />
-                <View style={{ backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                <Text style={S.fieldLabel}>Mot de passe temporaire * (min. 6 car.)</Text>
+                <View style={{ position: 'relative' }}>
+                  <TextInput
+                    style={[S.fieldInput, { paddingRight: 48 }]}
+                    value={form.password}
+                    onChangeText={v => set('password', v)}
+                    placeholder="••••••••"
+                    secureTextEntry={!showPwd}
+                    placeholderTextColor={COLORS.textMuted}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPwd(v => !v)}
+                    style={{ position: 'absolute', right: 14, top: 0, bottom: 16, justifyContent: 'center' }}
+                  >
+                    <Feather name={showPwd ? 'eye-off' : 'eye'} size={16} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <View style={{
+                  backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10,
+                  marginBottom: 8, flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+                }}>
                   <Feather name="info" size={13} color="#D97706" />
                   <Text style={{ fontSize: 12, color: '#92400E', flex: 1 }}>
-                    Le médecin devra changer ce mot de passe à sa première connexion.
+                    Le médecin changera ce mot de passe à sa première connexion.
                   </Text>
                 </View>
               </>
             )}
 
+            {/* ── Bouton submit ── */}
             <TouchableOpacity
-              style={[S.submitBtn, { backgroundColor: '#4C1D95', opacity: loading ? 0.7 : 1 }]}
-              onPress={handleSave} disabled={loading}>
+              style={[S.submitBtn, { backgroundColor: '#4C1D95', marginTop: 14, opacity: loading ? 0.7 : 1 }]}
+              onPress={submit}
+              disabled={loading}
+            >
               {loading
                 ? <ActivityIndicator size="small" color="#fff" />
                 : <Text style={S.submitBtnText}>{isEdit ? 'Enregistrer' : 'Créer le compte médecin'}</Text>}
             </TouchableOpacity>
+
             <TouchableOpacity style={S.cancelBtn} onPress={onClose}>
               <Text style={S.cancelBtnText}>Annuler</Text>
             </TouchableOpacity>
@@ -333,81 +632,88 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
   );
 };
 
-// ─── Modal Réinitialisation MDP ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// MODAL RESET MDP
+// ══════════════════════════════════════════════════════════════════════════════
 const ResetPwdModal = ({ visible, onClose, onSave, medecin, loading }) => {
-  const [newPwd, setNewPwd] = useState('');
-  const [show,   setShow]   = useState(false);
-
-  useEffect(() => { if (visible) setNewPwd(''); }, [visible]);
-
-  const handleSave = () => {
-    if (newPwd.length < 6) { Alert.alert('Mot de passe trop court', 'Minimum 6 caractères.'); return; }
-    onSave(medecin._id, newPwd);
-  };
+  const [pwd,  setPwd]  = useState('');
+  const [show, setShow] = useState(false);
+  useEffect(() => { if (visible) { setPwd(''); setShow(false); } }, [visible]);
+  const nomComplet = medecin ? `${medecin.prenom || ''} ${medecin.nom || ''}`.trim() : '';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={S.modalOverlay}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0} style={S.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[S.modalSheet, { minHeight: undefined }]}>
           <View style={S.modalHandle} />
           <Text style={S.modalTitle}>🔑 Réinitialiser le MDP</Text>
-          <Text style={S.modalSub}>
-            Définir un nouveau mot de passe pour {medecin?.nom}.
-          </Text>
-
-          <View style={{ paddingHorizontal: 0 }}>
-            <Text style={S.fieldLabel}>Nouveau mot de passe *</Text>
-            <View style={{ position: 'relative' }}>
-              <TextInput style={[S.fieldInput, { paddingRight: 48 }]}
-                value={newPwd} onChangeText={setNewPwd}
-                placeholder="••••••••" secureTextEntry={!show}
-                placeholderTextColor={COLORS.textMuted} autoCapitalize="none" />
-              <TouchableOpacity
-                onPress={() => setShow(v => !v)}
-                style={{ position: 'absolute', right: 14, top: 0, bottom: 16, justifyContent: 'center' }}>
-                <Feather name={show ? 'eye-off' : 'eye'} size={16} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, marginBottom: 16, flexDirection: 'row', gap: 8 }}>
-              <Feather name="alert-triangle" size={13} color="#D97706" />
-              <Text style={{ fontSize: 12, color: '#92400E', flex: 1 }}>
-                Le médecin recevra un email et devra changer ce mot de passe à la prochaine connexion.
-              </Text>
-            </View>
-
+          <Text style={S.modalSub}>Nouveau mot de passe pour Dr. {nomComplet}.</Text>
+          <Text style={S.fieldLabel}>Nouveau mot de passe *</Text>
+          <View>
+            <TextInput
+              style={[S.fieldInput, { paddingRight: 48 }]}
+              value={pwd} onChangeText={setPwd}
+              placeholder="••••••••" secureTextEntry={!show}
+              placeholderTextColor={COLORS.textMuted} autoCapitalize="none"
+            />
             <TouchableOpacity
-              style={[S.submitBtn, { backgroundColor: COLORS.primary || '#7C3AED', opacity: loading ? 0.7 : 1 }]}
-              onPress={handleSave} disabled={loading}>
-              {loading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={S.submitBtnText}>Confirmer la réinitialisation</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity style={S.cancelBtn} onPress={onClose}>
-              <Text style={S.cancelBtnText}>Annuler</Text>
+              onPress={() => setShow(v => !v)}
+              style={{ position: 'absolute', right: 14, top: 0, bottom: 16, justifyContent: 'center' }}
+            >
+              <Feather name={show ? 'eye-off' : 'eye'} size={16} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[S.submitBtn, { backgroundColor: '#7C3AED', opacity: loading ? 0.7 : 1 }]}
+            onPress={() => {
+              if (pwd.length < 6) { Alert.alert('Trop court', 'Minimum 6 caractères.'); return; }
+              onSave(medecin._id, pwd);
+            }}
+            disabled={loading}
+          >
+            {loading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={S.submitBtnText}>Confirmer</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={S.cancelBtn} onPress={onClose}>
+            <Text style={S.cancelBtnText}>Annuler</Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </Modal>
   );
 };
 
-// ─── ÉCRAN PRINCIPAL ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ÉCRAN PRINCIPAL
+// ══════════════════════════════════════════════════════════════════════════════
 export default function ComptesScreen({ route }) {
-  const [activeTab,    setActiveTab]    = useState('doctor');
-  const [search,       setSearch]       = useState('');
-  const [medecins,     setMedecins]     = useState([]);
-  const [parents,      setParents]      = useState([]);
-  const [loadingList,  setLoadingList]  = useState(true);
-  const [loadingSave,  setLoadingSave]  = useState(false);
-  const [modal,        setModal]        = useState(false);
-  const [resetModal,   setResetModal]   = useState(false);
-  const [editItem,     setEditItem]     = useState(null);
-  const [resetTarget,  setResetTarget]  = useState(null);
+  const [activeTab,   setActiveTab]   = useState('doctor');
+  const [search,      setSearch]      = useState('');
+  const [medecins,    setMedecins]    = useState([]);
+  const [parents,     setParents]     = useState([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingSave, setLoadingSave] = useState(false);
+  const [modal,       setModal]       = useState(false);
+  const [resetModal,  setResetModal]  = useState(false);
+  const [editItem,    setEditItem]    = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [error,       setError]       = useState(null);
 
-  // Chargement initial
+  // ── Chargement données ─────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
+    setLoadingList(true);
+    setError(null);
+    try {
+      const [m, p] = await Promise.all([Api.getMedecins(), Api.getParents()]);
+      setMedecins(Array.isArray(m) ? m : []);
+      setParents(Array.isArray(p) ? p : []);
+    } catch (e) {
+      setError(e.message || 'Impossible de charger les données.');
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
   useEffect(() => { loadAll(); }, []);
 
   useEffect(() => {
@@ -416,43 +722,47 @@ export default function ComptesScreen({ route }) {
     }
   }, [route?.params?.openCreate]);
 
-  const loadAll = async () => {
-    setLoadingList(true);
-    const [m, p] = await Promise.all([ApiService.getMedecins(), ApiService.getParents()]);
-    setMedecins(m);
-    setParents(p);
-    setLoadingList(false);
-  };
-
-  // ── Actions Médecins ──────────────────────────────────────────────────────
-  const handleSaveMedecin = useCallback(async (item) => {
+  // ── Médecins CRUD ──────────────────────────────────────────────────────────
+  const handleSaveMedecin = useCallback(async (payload) => {
     setLoadingSave(true);
     try {
-      if (item._id && medecins.find(m => m._id === item._id)) {
-        const updated = await ApiService.updateMedecin(item._id, item);
-        setMedecins(p => p.map(m => m._id === updated._id ? updated : m));
-        Alert.alert('✅ Modifié', `Le compte de ${updated.nom} a été mis à jour.`);
+      if (payload._id) {
+        // Modification
+        const updated = await Api.updateMedecin(payload._id, payload);
+        setMedecins(prev => prev.map(m => m._id === updated._id ? { ...m, ...updated } : m));
+        Alert.alert('✅ Modifié', `Dr. ${updated.prenom} ${updated.nom} mis à jour.`);
       } else {
-        const created = await ApiService.createMedecin(item);
-        setMedecins(p => [created, ...p]);
-        Alert.alert('✅ Compte créé', `Le compte de ${created.nom} a été créé. Un email a été envoyé.`);
+        // Création
+        const created = await Api.createMedecin(payload);
+        setMedecins(prev => [created, ...prev]);
+        Alert.alert(
+          '✅ Compte créé',
+          `Dr. ${created.prenom} ${created.nom} créé avec succès.\n\n` +
+          `⚠️ Le médecin doit changer son mot de passe à la première connexion.`
+        );
       }
-      setModal(false); setEditItem(null);
-    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
-    finally { setLoadingSave(false); }
-  }, [medecins]);
+      setModal(false);
+      setEditItem(null);
+    } catch (e) {
+      Alert.alert('Erreur', e.message || 'Impossible de sauvegarder.');
+    } finally {
+      setLoadingSave(false);
+    }
+  }, []);
 
   const setMedecinStatus = useCallback(async (id, status) => {
-    await ApiService.setMedecinStatus(id, status);
-    setMedecins(p => p.map(m => m._id === id ? { ...m, status } : m));
+    try {
+      await Api.setMedecinStatus(id, status);
+      setMedecins(prev => prev.map(m => m._id === id ? { ...m, status } : m));
+    } catch (e) { Alert.alert('Erreur', e.message); }
   }, []);
 
   const deleteMedecin = useCallback((id) => {
-    Alert.alert('Supprimer le médecin ?', 'Le compte sera définitivement supprimé.', [
+    Alert.alert('Supprimer ce médecin ?', 'Cette action est irréversible.', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Supprimer', style: 'destructive', onPress: async () => {
-        await ApiService.deleteMedecin(id);
-        setMedecins(p => p.filter(m => m._id !== id));
+        try { await Api.deleteMedecin(id); setMedecins(prev => prev.filter(m => m._id !== id)); }
+        catch (e) { Alert.alert('Erreur', e.message); }
       }},
     ]);
   }, []);
@@ -460,65 +770,77 @@ export default function ComptesScreen({ route }) {
   const handleResetPwd = useCallback(async (id, newPwd) => {
     setLoadingSave(true);
     try {
-      await ApiService.updateMedecin(id, { password: newPwd });
-      Alert.alert('✅ MDP réinitialisé', 'Un email a été envoyé au médecin.');
+      await Api.resetMedecinPassword(id, newPwd);
+      Alert.alert('✅ MDP réinitialisé', 'Le médecin devra le modifier à la prochaine connexion.');
       setResetModal(false); setResetTarget(null);
-    } catch { Alert.alert('Erreur', 'Impossible de réinitialiser.'); }
+    } catch (e) { Alert.alert('Erreur', e.message); }
     finally { setLoadingSave(false); }
   }, []);
 
-  // ── Actions Parents ───────────────────────────────────────────────────────
+  // ── Parents ────────────────────────────────────────────────────────────────
   const setParentStatus = useCallback(async (id, status) => {
-    await ApiService.setParentStatus(id, status);
-    setParents(p => p.map(pr => pr._id === id ? { ...pr, status } : pr));
+    try {
+      await Api.setParentStatus(id, status);
+      setParents(prev => prev.map(p => p._id === id ? { ...p, status } : p));
+    } catch (e) { Alert.alert('Erreur', e.message); }
   }, []);
 
   const deleteParent = useCallback((id) => {
-    Alert.alert('Supprimer le compte parent ?', 'Le compte et toutes les données associées seront supprimés.', [
+    Alert.alert('Supprimer ce parent ?', 'Le compte sera supprimé définitivement.', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Supprimer', style: 'destructive', onPress: async () => {
-        await ApiService.deleteParent(id);
-        setParents(p => p.filter(pr => pr._id !== id));
+        try { await Api.deleteParent(id); setParents(prev => prev.filter(p => p._id !== id)); }
+        catch (e) { Alert.alert('Erreur', e.message); }
       }},
     ]);
   }, []);
 
-  // ── Filtrage ──────────────────────────────────────────────────────────────
-  const q = search.toLowerCase();
+  // ── Filtrage ───────────────────────────────────────────────────────────────
+  const q    = search.toLowerCase().trim();
   const list = activeTab === 'doctor'
-    ? medecins.filter(m => !q || m.nom.toLowerCase().includes(q) || m.specialite?.toLowerCase().includes(q))
-    : parents.filter(p => !q || p.nom.toLowerCase().includes(q) || p.email.toLowerCase().includes(q));
+    ? medecins.filter(m => !q
+        || `${m.prenom} ${m.nom}`.toLowerCase().includes(q)
+        || (m.specialite || '').toLowerCase().includes(q)
+        || (m.email      || '').toLowerCase().includes(q))
+    : parents.filter(p => !q
+        || `${p.prenom} ${p.nom}`.toLowerCase().includes(q)
+        || (p.email || '').toLowerCase().includes(q));
 
+  // ── Rendu ──────────────────────────────────────────────────────────────────
   return (
     <AdminLayout activeTab="comptes">
       <StatusBar barStyle="light-content" />
       <View style={S.container}>
 
         {/* ── Header ── */}
-        <LinearGradient colors={['#4C1D95', '#1E1B4B']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={S.header}>
-             {/* Blobs */}
-                      <View style={{ position: 'absolute', left: -60, top: -20, width: 200, height: 200, borderRadius: 100, backgroundColor: '#6D28D9', opacity: 0.35 }} />
-                      <View style={{ position: 'absolute', right: -40, bottom: -30, width: 160, height: 160, borderRadius: 80, backgroundColor: '#3B82F6', opacity: 0.18 }} />
-            
+        <LinearGradient
+          colors={['#4C1D95', '#1E1B4B']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={S.header}
+        >
+          <View style={{ position: 'absolute', left: -60, top: -20, width: 200, height: 200, borderRadius: 100, backgroundColor: '#6D28D9', opacity: 0.35 }} />
+          <View style={{ position: 'absolute', right: -40, bottom: -30, width: 160, height: 160, borderRadius: 80, backgroundColor: '#3B82F6', opacity: 0.18 }} />
           <View style={S.headerTopRow}>
             <View>
               <Text style={S.headerGreeting}>Gestion des comptes</Text>
-              <Text style={S.headerTitle}>
-                Médecins & <Text style={S.headerAccent}>Parents</Text>
-              </Text>
+              <Text style={S.headerTitle}>Médecins & <Text style={S.headerAccent}>Parents</Text></Text>
             </View>
-            <TouchableOpacity style={S.addHeaderBtn}
-                            onPress={() => { setEditItem(null); setModal(true); }} activeOpacity={0.85}>
-                            <Feather name="plus" size={20} color="#fff" />
-                          </TouchableOpacity>
+            <TouchableOpacity
+              style={S.addHeaderBtn}
+              onPress={() => { setEditItem(null); setModal(true); }}
+              activeOpacity={0.85}
+            >
+              <Feather name="plus" size={20} color="#fff" />
+            </TouchableOpacity>
           </View>
           <View style={S.searchBar}>
             <Feather name="search" size={16} color="rgba(255,255,255,0.6)" />
-            <TextInput value={search} onChangeText={setSearch}
+            <TextInput
+              value={search} onChangeText={setSearch}
               placeholder="Rechercher un compte…"
               placeholderTextColor="rgba(255,255,255,0.45)"
-              style={S.searchInput} />
+              style={S.searchInput}
+            />
             {!!search && (
               <TouchableOpacity onPress={() => setSearch('')}>
                 <Feather name="x" size={16} color="rgba(255,255,255,0.6)" />
@@ -533,20 +855,27 @@ export default function ComptesScreen({ route }) {
             { key: 'doctor', label: `Médecins (${medecins.length})` },
             { key: 'parent', label: `Parents (${parents.length})` },
           ].map(t => (
-            <TouchableOpacity key={t.key}
+            <TouchableOpacity
+              key={t.key}
               style={[S.tab, activeTab === t.key && S.tabActive]}
-              onPress={() => { setActiveTab(t.key); setSearch(''); }}>
+              onPress={() => { setActiveTab(t.key); setSearch(''); }}
+            >
               <Text style={[S.tabText, activeTab === t.key && S.tabTextActive]}>{t.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ── Bouton créer (médecins uniquement) ── */}
+        {/* ── Bouton créer médecin ── */}
         {activeTab === 'doctor' && (
-          <LinearGradient colors={['#4C1D95', '#6D28D9']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={S.createBtn}>
-            <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
-              onPress={() => { setEditItem(null); setModal(true); }}>
+          <LinearGradient
+            colors={['#4C1D95', '#6D28D9']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={S.createBtn}
+          >
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              onPress={() => { setEditItem(null); setModal(true); }}
+            >
               <Feather name="plus-circle" size={20} color="#fff" />
               <Text style={S.createBtnText}>Créer un compte médecin</Text>
               <Feather name="chevron-right" size={18} color="rgba(255,255,255,0.7)" />
@@ -554,21 +883,38 @@ export default function ComptesScreen({ route }) {
           </LinearGradient>
         )}
 
-        {/* ── Note parents ── */}
+        {/* ── Info parents ── */}
         {activeTab === 'parent' && (
-          <View style={{ marginHorizontal: 16, marginBottom: 10, backgroundColor: '#EDE9FE', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            <Feather name="info" size={16} color={COLORS.primary || '#7C3AED'} />
-            <Text style={{ fontSize: 12, color: COLORS.primary || '#7C3AED', flex: 1, fontWeight: '600' }}>
-              Les parents créent leur propre compte. Vous pouvez bloquer, débloquer ou supprimer un compte parent.
+          <View style={{
+            marginHorizontal: 16, marginBottom: 10, backgroundColor: '#EDE9FE',
+            borderRadius: 12, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center',
+          }}>
+            <Feather name="info" size={16} color="#7C3AED" />
+            <Text style={{ fontSize: 12, color: '#7C3AED', flex: 1, fontWeight: '600' }}>
+              Les parents créent leur propre compte. Vous pouvez bloquer, débloquer ou supprimer.
             </Text>
+          </View>
+        )}
+
+        {/* ── Erreur ── */}
+        {!!error && (
+          <View style={{
+            marginHorizontal: 16, marginBottom: 10, backgroundColor: '#FEE2E2',
+            borderRadius: 12, padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center',
+          }}>
+            <Feather name="alert-circle" size={16} color="#991B1B" />
+            <Text style={{ fontSize: 12, color: '#991B1B', flex: 1, fontWeight: '600' }}>{error}</Text>
+            <TouchableOpacity onPress={loadAll}>
+              <Text style={{ fontSize: 12, color: '#7C3AED', fontWeight: '700' }}>Réessayer</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         {/* ── Liste ── */}
         {loadingList ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={COLORS.primary || '#7C3AED'} />
-            <Text style={{ marginTop: 12, color: COLORS.textMuted, fontSize: 13 }}>Chargement…</Text>
+            <ActivityIndicator size="large" color="#7C3AED" />
+            <Text style={{ marginTop: 12, color: '#9CA3AF', fontSize: 13 }}>Chargement…</Text>
           </View>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={S.scrollContent}>
@@ -577,15 +923,23 @@ export default function ComptesScreen({ route }) {
                 <Text style={S.emptyIcon}>{activeTab === 'doctor' ? '👨‍⚕️' : '👨‍👩‍👧'}</Text>
                 <Text style={S.emptyText}>Aucun compte trouvé</Text>
                 <Text style={S.emptySub}>{search ? 'Essayez un autre mot-clé' : 'Aucun compte enregistré'}</Text>
+                {activeTab === 'doctor' && !search && (
+                  <TouchableOpacity
+                    onPress={() => { setEditItem(null); setModal(true); }}
+                    style={{ marginTop: 16, backgroundColor: '#4C1D95', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10 }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>+ Créer un médecin</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : activeTab === 'doctor' ? (
               list.map(item => (
                 <MedecinCard key={item._id} item={item}
-                  onApprove={id => setMedecinStatus(id, 'actif')}
-                  onBlock={id   => setMedecinStatus(id, 'bloque')}
-                  onUnblock={id => setMedecinStatus(id, 'actif')}
+                  onApprove={id  => setMedecinStatus(id, 'actif')}
+                  onBlock={id    => setMedecinStatus(id, 'bloque')}
+                  onUnblock={id  => setMedecinStatus(id, 'actif')}
                   onDelete={deleteMedecin}
-                  onEdit={item => { setEditItem(item); setModal(true); }}
+                  onEdit={item   => { setEditItem(item); setModal(true); }}
                   onResetPwd={item => { setResetTarget(item); setResetModal(true); }}
                 />
               ))
@@ -602,7 +956,7 @@ export default function ComptesScreen({ route }) {
         )}
       </View>
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       <MedecinModal
         visible={modal && activeTab === 'doctor'}
         onClose={() => { setModal(false); setEditItem(null); }}

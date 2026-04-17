@@ -8,15 +8,14 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import ParentLayout from '../../../components/Navigation/ParentNavigation';
 import GlassCard   from '../../../components/UI/GlassCard';
 import GlassPill   from '../../../components/UI/GlassPill';
 import GlassButton from '../../../components/UI/GlassButton';
 import { COLORS, GLASS, gradients, shadow } from '../../../theme';
 
-// ✅ Même SERVER_URL que ProfileScreen
 const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
-
 const { width } = Dimensions.get('window');
 
 // ── Guide steps ───────────────────────────────────────────────────────────────
@@ -33,7 +32,6 @@ const MockupCard = ({ icon, title, value, sub, color, delay }) => {
   useEffect(() => {
     Animated.spring(anim, { toValue: 1, tension: 50, friction: 8, delay, useNativeDriver: true }).start();
   }, []);
-
   return (
     <Animated.View style={{
       opacity: anim,
@@ -48,8 +46,7 @@ const MockupCard = ({ icon, title, value, sub, color, delay }) => {
           width: 40, height: 40, borderRadius: 14,
           backgroundColor: GLASS.hero.bg,
           borderWidth: 1, borderColor: GLASS.hero.border,
-          justifyContent: 'center', alignItems: 'center',
-          marginBottom: 12,
+          justifyContent: 'center', alignItems: 'center', marginBottom: 12,
         }}>
           <Feather name={icon} size={18} color={color} />
         </View>
@@ -68,8 +65,7 @@ const FeatureCard = ({ icon, title, desc, color, bg }) => (
       width: 48, height: 48, borderRadius: 16,
       backgroundColor: bg,
       borderWidth: 1, borderColor: color + '22',
-      justifyContent: 'center', alignItems: 'center',
-      marginBottom: 12,
+      justifyContent: 'center', alignItems: 'center', marginBottom: 12,
     }}>
       <Feather name={icon} size={21} color={color} />
     </View>
@@ -84,7 +80,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
   useEffect(() => {
     Animated.timing(anim, { toValue: 1, duration: 450, delay: 100 + index * 90, useNativeDriver: true }).start();
   }, []);
-
   return (
     <Animated.View style={{
       opacity:   anim,
@@ -92,21 +87,10 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
       marginBottom: 10,
     }}>
       <GlassCard
-        variant="light"
-        pressable
+        variant="light" pressable
         onPress={() => onPress(step.screen)}
         borderRadius={20}
-        style={{
-          borderColor: step.done ? COLORS.primary + '38' : GLASS.light.border,
-          ...Platform.select({
-            ios: {
-              shadowColor:   step.done ? COLORS.primary : GLASS.light.shadow,
-              shadowOffset:  { width: 0, height: step.done ? 10 : 4 },
-              shadowOpacity: step.done ? 0.22 : 1,
-              shadowRadius:  step.done ? 24 : 14,
-            },
-          }),
-        }}
+        style={{ borderColor: step.done ? COLORS.primary + '38' : GLASS.light.border }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 }}>
           <LinearGradient
@@ -121,12 +105,8 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
           >
             <Feather name={step.icon} size={21} color={step.done ? '#fff' : COLORS.textMuted} />
           </LinearGradient>
-
           <View style={{ flex: 1 }}>
-            <Text style={{
-              fontSize: 14, fontWeight: '700',
-              color: step.done ? COLORS.primary : COLORS.text, marginBottom: 3,
-            }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: step.done ? COLORS.primary : COLORS.text, marginBottom: 3 }}>
               {step.title}
             </Text>
             <Text style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 17 }}>{step.desc}</Text>
@@ -137,16 +117,11 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
               borderWidth: 1,
               borderColor: step.done ? COLORS.primary + '28' : GLASS.light.border,
             }}>
-              <Text style={{
-                fontSize: 9, fontWeight: '800',
-                color: step.done ? COLORS.primary : COLORS.textMuted,
-                letterSpacing: 0.7,
-              }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: step.done ? COLORS.primary : COLORS.textMuted, letterSpacing: 0.7 }}>
                 {step.done ? '✓  COMPLÉTÉ' : step.tag}
               </Text>
             </View>
           </View>
-
           <TouchableOpacity
             onPress={() => onToggle(step.id)}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -168,7 +143,6 @@ const StepCard = ({ step, index, onToggle, onPress }) => {
 
 // ── ÉCRAN PRINCIPAL ───────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  // ✅ userData aligné sur ProfileScreen : prenom, nom, email, avatar
   const [userData, setUserData] = useState({ prenom: '', nom: '', email: '', avatar: null });
   const [steps, setSteps]       = useState(GUIDE_STEPS);
   const [greeting, setGreeting] = useState('Bonjour');
@@ -183,26 +157,42 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     loadUserData();
     loadGuideSteps();
-
     const h = new Date().getHours();
     setGreeting(h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir');
-
     Animated.stagger(200, [
       Animated.spring(heroAnim,    { toValue: 1, tension: 55, friction: 8, useNativeDriver: true }),
       Animated.timing(contentAnim, { toValue: 1, duration: 600,            useNativeDriver: true }),
     ]).start();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ✅ Logique identique à ProfileScreen.loadUserProfile()
+  // ✅ Recharger l'avatar à chaque fois qu'on revient sur HomeScreen
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshAvatarFromCache();
+    }, [])
+  );
+
+  // ✅ Récupère l'avatar depuis le cache AsyncStorage (mis à jour par ProfileScreen)
+  const refreshAvatarFromCache = async () => {
+    try {
+      const cached = await AsyncStorage.getItem('cachedAvatarUri');
+      if (cached) {
+        setUserData(prev => ({ ...prev, avatar: cached }));
+      }
+    } catch (e) {}
+  };
+
   const loadUserData = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-
       if (!token) {
         Alert.alert("Session expirée", "Veuillez vous reconnecter.");
         navigation.navigate('Login');
         return;
       }
+
+      // ✅ Charger d'abord l'avatar du cache pour affichage immédiat
+      const cached = await AsyncStorage.getItem('cachedAvatarUri');
 
       const response = await fetch(`${SERVER_URL}/profile`, {
         method: 'GET',
@@ -225,17 +215,25 @@ export default function HomeScreen({ navigation }) {
         return;
       }
 
-      // ✅ Même mapping de champs que ProfileScreen
+      // ✅ Priorité : cache local > URL serveur > null
+      let avatarToUse = cached;
+      if (!avatarToUse && data.avatar) {
+        avatarToUse = `${SERVER_URL}${data.avatar}?t=${Date.now()}`;
+        await AsyncStorage.setItem('cachedAvatarUri', avatarToUse);
+      }
+
       setUserData({
         prenom: data.prenom || 'Parent',
         nom:    data.nom    || '',
         email:  data.email  || '',
-        avatar: null, // avatar géré localement via AsyncStorage
+        avatar: avatarToUse,
       });
 
     } catch (error) {
       console.error('Erreur chargement utilisateur:', error);
-      Alert.alert("Erreur", "Impossible de charger votre profil. Vérifiez votre connexion.");
+      // Essayer quand même d'afficher depuis le cache
+      const cached = await AsyncStorage.getItem('cachedAvatarUri');
+      if (cached) setUserData(prev => ({ ...prev, avatar: cached }));
     } finally {
       setLoading(false);
     }
@@ -270,7 +268,7 @@ export default function HomeScreen({ navigation }) {
       <ParentLayout activeTab="home">
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white }}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={{ marginTop: 10, color: COLORS.textMuted }}>Chargement du profil...</Text>
+          <Text style={{ marginTop: 10, color: COLORS.textMuted }}>Chargement...</Text>
         </View>
       </ParentLayout>
     );
@@ -319,7 +317,6 @@ export default function HomeScreen({ navigation }) {
                 <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.62)', fontWeight: '500' }}>
                   {greeting} 👋
                 </Text>
-                {/* ✅ Prénom + Nom récupérés du backend */}
                 <Text style={{ fontSize: 27, fontWeight: '800', color: '#fff', marginTop: 3, letterSpacing: -0.8, lineHeight: 33 }}>
                   {userData.prenom}{'\n'}{userData.nom}
                 </Text>
@@ -332,7 +329,7 @@ export default function HomeScreen({ navigation }) {
                 />
               </View>
 
-              {/* Avatar — tappable vers Profile */}
+              {/* ✅ Avatar récupéré depuis cache AsyncStorage — mis à jour par ProfileScreen */}
               <TouchableOpacity
                 onPress={() => navigation?.navigate('Profile')}
                 activeOpacity={0.82}
@@ -345,10 +342,15 @@ export default function HomeScreen({ navigation }) {
                   ...shadow(GLASS.hero.shadow, 8, 1, 18, 6),
                 }}
               >
-                {userData.avatar
-                  ? <Image source={{ uri: userData.avatar }} style={{ width: 56, height: 56 }} />
-                  : <Ionicons name="person" size={26} color="rgba(255,255,255,0.92)" />
-                }
+                {userData.avatar ? (
+                  <Image
+                    source={{ uri: userData.avatar }}
+                    style={{ width: 56, height: 56 }}
+                    onError={() => setUserData(prev => ({ ...prev, avatar: null }))}
+                  />
+                ) : (
+                  <Ionicons name="person" size={26} color="rgba(255,255,255,0.92)" />
+                )}
               </TouchableOpacity>
             </Animated.View>
 
@@ -369,12 +371,10 @@ export default function HomeScreen({ navigation }) {
             </Animated.View>
           </LinearGradient>
 
-          {/* ══ SECTION 1 — GUIDE PROGRESS ══════════════════════════════════ */}
+          {/* ══ SECTION 1 — GUIDE PROGRESS ═══════════════════════════════════ */}
           <Animated.View style={{ opacity: contentAnim }}>
             <View style={{ paddingHorizontal: 22, marginTop: -20 }}>
-              <GlassCard variant="light" borderRadius={24} style={{
-                ...shadow(COLORS.primary, 14, 0.16, 26, 10),
-              }}>
+              <GlassCard variant="light" borderRadius={24} style={{ ...shadow(COLORS.primary, 14, 0.16, 26, 10) }}>
                 <LinearGradient
                   colors={gradients.card}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -382,9 +382,7 @@ export default function HomeScreen({ navigation }) {
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 4 }}>
-                        Guide de démarrage
-                      </Text>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 4 }}>Guide de démarrage</Text>
                       <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.58)' }}>
                         {doneCount === steps.length
                           ? '🎉 Tout est configuré !'
@@ -398,21 +396,15 @@ export default function HomeScreen({ navigation }) {
                       borderColor: progressPct === 100 ? '#10B981' : GLASS.dark.border,
                       justifyContent: 'center', alignItems: 'center',
                     }}>
-                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>
-                        {Math.round(progressPct)}%
-                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{Math.round(progressPct)}%</Text>
                     </View>
                   </View>
-
                   <View style={{ flexDirection: 'row', gap: 6, marginTop: 18 }}>
                     {steps.map((s) => (
                       <View key={s.id} style={{
                         flex: 1, height: 5, borderRadius: 3,
-                        backgroundColor: s.done
-                          ? (progressPct === 100 ? '#10B981' : '#C4B5FD')
-                          : GLASS.dark.bg,
-                        borderWidth: s.done ? 0 : 1,
-                        borderColor: GLASS.dark.border,
+                        backgroundColor: s.done ? (progressPct === 100 ? '#10B981' : '#C4B5FD') : GLASS.dark.bg,
+                        borderWidth: s.done ? 0 : 1, borderColor: GLASS.dark.border,
                       }} />
                     ))}
                   </View>
@@ -427,34 +419,25 @@ export default function HomeScreen({ navigation }) {
 
               <GlassPill variant="primary" label="POURQUOI SAFEKIDS ?" style={{ alignSelf: 'center', marginBottom: 10 }} />
               <Text style={{ textAlign: 'center', fontSize: 23, fontWeight: '800', color: COLORS.text, letterSpacing: -0.6, paddingHorizontal: 24, lineHeight: 30 }}>
-                Une app qui fait{'\n'}
-                <Text style={{ color: COLORS.primary }}>vraiment la différence</Text>
+                Une app qui fait{'\n'}<Text style={{ color: COLORS.primary }}>vraiment la différence</Text>
               </Text>
               <Text style={{ textAlign: 'center', fontSize: 13, color: COLORS.textMuted, marginTop: 8, marginBottom: 30, paddingHorizontal: 32, lineHeight: 20 }}>
                 Tout ce dont les parents ont besoin pour accompagner leur enfant au quotidien.
               </Text>
-
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 22 }}>
                 <FeatureCard icon="shield"      title="Sécurisé"    desc="Données protégées"  color={COLORS.primary} bg={COLORS.primaryMid}   />
                 <FeatureCard icon="zap"         title="Intelligent" desc="IA adaptative"       color="#0EA5E9"        bg="#E0F2FE"             />
                 <FeatureCard icon="award"       title="Certifié"    desc="Validé par experts" color={COLORS.success} bg={COLORS.successLight} />
                 <FeatureCard icon="trending-up" title="Efficace"    desc="+40% de progrès"    color={COLORS.warning} bg="#FEF3C7"             />
               </View>
-
               <View style={{ alignItems: 'center', marginTop: 32 }}>
-                <GlassButton
-                  variant="primary"
-                  size="md"
-                  label="Explorer les activités →"
-                  onPress={() => navigation?.navigate('Activities')}
-                />
+                <GlassButton variant="primary" size="md" label="Explorer les activités →" onPress={() => navigation?.navigate('Activities')} />
               </View>
             </View>
 
-            {/* ══ SECTION 3 — GUIDE ÉTAPES ═════════════════════════════════ */}
+            {/* ══ SECTION 3 — GUIDE ÉTAPES ════════════════════════════════ */}
             <View style={{ backgroundColor: COLORS.surface, paddingTop: 48, paddingHorizontal: 22, paddingBottom: 44, overflow: 'hidden' }}>
               <View style={{ position: 'absolute', right: -60, top: 60, width: 200, height: 200, borderRadius: 100, backgroundColor: '#EDE9FE', opacity: 0.4 }} />
-
               <GlassPill variant="primary" label="GUIDE PARENT" style={{ marginBottom: 10 }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 26 }}>
                 <View style={{ flex: 1 }}>
@@ -465,37 +448,16 @@ export default function HomeScreen({ navigation }) {
                     Configurez SafeKids en quelques minutes.
                   </Text>
                 </View>
-                <GlassButton
-                  variant="secondary"
-                  size="sm"
-                  label="Réinitialiser"
-                  onPress={resetGuide}
-                  style={{ paddingHorizontal: 14 }}
-                />
+                <GlassButton variant="secondary" size="sm" label="Réinitialiser" onPress={resetGuide} style={{ paddingHorizontal: 14 }} />
               </View>
-
               {steps.map((step, i) => (
-                <StepCard
-                  key={step.id}
-                  step={step}
-                  index={i}
-                  onToggle={toggleStep}
-                  onPress={(screen) => navigation?.navigate(screen)}
-                />
+                <StepCard key={step.id} step={step} index={i} onToggle={toggleStep} onPress={(screen) => navigation?.navigate(screen)} />
               ))}
-
               {progressPct === 100 && (
                 <GlassCard variant="light" borderRadius={22} style={{ marginTop: 8, overflow: 'hidden' }}>
-                  <LinearGradient
-                    colors={gradients.success}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                    style={{ padding: 26, alignItems: 'center' }}
-                  >
-                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(255,255,255,0.35)' }} />
+                  <LinearGradient colors={gradients.success} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 26, alignItems: 'center' }}>
                     <Text style={{ fontSize: 32, marginBottom: 8 }}>🎉</Text>
-                    <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff', textAlign: 'center' }}>
-                      Configuration terminée !
-                    </Text>
+                    <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff', textAlign: 'center' }}>Configuration terminée !</Text>
                     <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.72)', textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
                       SafeKids est prêt. Profitez de toutes les fonctionnalités !
                     </Text>
@@ -507,82 +469,42 @@ export default function HomeScreen({ navigation }) {
             {/* ══ SECTION 4 — PREMIUM ══════════════════════════════════════ */}
             <View style={{ paddingHorizontal: 22, paddingTop: 32, backgroundColor: COLORS.white }}>
               <GlassCard variant="dark" borderRadius={28} style={{ overflow: 'hidden' }}>
-                <LinearGradient
-                  colors={gradients.premium}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                  style={{ padding: 28, overflow: 'hidden' }}
-                >
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: GLASS.dark.shimmer }} />
-                  <View style={{ position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: 80, backgroundColor: GLASS.dark.bg }} />
-                  <View style={{ position: 'absolute', left: -20, bottom: -20, width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.03)' }} />
-
-                  <GlassPill
-                    variant="gold"
-                    icon={<Feather name="star" size={12} color="#FCD34D" />}
-                    label="PREMIUM"
-                    style={{ marginBottom: 18 }}
-                  />
+                <LinearGradient colors={gradients.premium} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 28, overflow: 'hidden' }}>
+                  <GlassPill variant="gold" icon={<Feather name="star" size={12} color="#FCD34D" />} label="PREMIUM" style={{ marginBottom: 18 }} />
                   <Text style={{ fontSize: 24, fontWeight: '800', color: '#fff', letterSpacing: -0.6, lineHeight: 32, marginBottom: 10 }}>
                     Tout débloquer{'\n'}pour votre enfant
                   </Text>
                   <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.52)', lineHeight: 20, marginBottom: 22 }}>
                     Activités illimitées, rapports détaillés, suivi multi-enfants et support prioritaire.
                   </Text>
-
                   {['Activités illimitées', 'Rapports détaillés', 'Support prioritaire 24/7'].map((item, i) => (
                     <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                      <View style={{
-                        width: 20, height: 20, borderRadius: 10,
-                        backgroundColor: 'rgba(253,211,77,0.16)',
-                        borderWidth: 1, borderColor: 'rgba(253,211,77,0.32)',
-                        justifyContent: 'center', alignItems: 'center',
-                      }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(253,211,77,0.16)', borderWidth: 1, borderColor: 'rgba(253,211,77,0.32)', justifyContent: 'center', alignItems: 'center' }}>
                         <Feather name="check" size={10} color="#FCD34D" />
                       </View>
                       <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.78)', fontWeight: '500' }}>{item}</Text>
                     </View>
                   ))}
-
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                    <GlassButton
-                      variant="gold"
-                      label="Passer Premium"
-                      icon={<Feather name="star" size={15} color="#1E1B4B" />}
-                      onPress={() => navigation?.navigate('Premium')}
-                      style={{ flex: 1 }}
-                      labelStyle={{ color: '#1E1B4B' }}
-                    />
-                    <GlassButton
-                      variant="ghost"
-                      bg="dark"
-                      iconRight={<Feather name="arrow-right" size={18} color="rgba(255,255,255,0.55)" />}
-                      style={{ paddingHorizontal: 18, height: 54 }}
-                    />
+                    <GlassButton variant="gold" label="Passer Premium" icon={<Feather name="star" size={15} color="#1E1B4B" />} onPress={() => navigation?.navigate('Premium')} style={{ flex: 1 }} labelStyle={{ color: '#1E1B4B' }} />
+                    <GlassButton variant="ghost" bg="dark" iconRight={<Feather name="arrow-right" size={18} color="rgba(255,255,255,0.55)" />} style={{ paddingHorizontal: 18, height: 54 }} />
                   </View>
                 </LinearGradient>
               </GlassCard>
             </View>
 
-            {/* ══ SECTION 5 — À PROPOS ═════════════════════════════════════ */}
+            {/* ══ SECTION 5 — À PROPOS ════════════════════════════════════ */}
             <View style={{ paddingHorizontal: 22, paddingTop: 32, backgroundColor: COLORS.white }}>
-              <GlassCard variant="light" borderRadius={26} style={{
-                ...shadow(COLORS.primary, 8, 0.08, 24, 4),
-                overflow: 'hidden',
-              }}>
-                <LinearGradient
-                  colors={[COLORS.primaryLight, 'rgba(255,255,255,0.82)']}
-                  style={{ padding: 22, paddingBottom: 18 }}
-                >
+              <GlassCard variant="light" borderRadius={26} style={{ ...shadow(COLORS.primary, 8, 0.08, 24, 4), overflow: 'hidden' }}>
+                <LinearGradient colors={[COLORS.primaryLight, 'rgba(255,255,255,0.82)']} style={{ padding: 22, paddingBottom: 18 }}>
                   <GlassPill variant="primary" label="À PROPOS DE SAFEKIDS" style={{ marginBottom: 10 }} />
                   <Text style={{ fontSize: 20, fontWeight: '800', color: COLORS.text, letterSpacing: -0.4, lineHeight: 27 }}>
-                    Design simple et{'\n'}
-                    <Text style={{ color: COLORS.primary }}>interface moderne</Text>
+                    Design simple et{'\n'}<Text style={{ color: COLORS.primary }}>interface moderne</Text>
                   </Text>
                   <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 8, lineHeight: 20 }}>
                     Une plateforme pensée pour les parents, simple à utiliser au quotidien.
                   </Text>
                 </LinearGradient>
-
                 <View style={{ paddingHorizontal: 22, paddingBottom: 22 }}>
                   {[
                     { icon: 'check-circle', color: COLORS.primary, text: 'Soigneusement conçue pour les familles'    },
@@ -590,24 +512,16 @@ export default function HomeScreen({ navigation }) {
                     { icon: 'check-circle', color: COLORS.success,  text: "Accès aux activités depuis n'importe où" },
                     { icon: 'check-circle', color: COLORS.warning,  text: 'Support disponible 24h/24, 7j/7'         },
                   ].map((item, i) => (
-                    <View key={i} style={{
-                      flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-                      paddingVertical: 12,
-                      borderBottomWidth: i < 3 ? 1 : 0,
-                      borderBottomColor: GLASS.light.border,
-                    }}>
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12, borderBottomWidth: i < 3 ? 1 : 0, borderBottomColor: GLASS.light.border }}>
                       <Feather name={item.icon} size={17} color={item.color} style={{ marginTop: 1 }} />
                       <Text style={{ fontSize: 13, color: COLORS.text, fontWeight: '500', flex: 1, lineHeight: 20 }}>{item.text}</Text>
                     </View>
                   ))}
-
                   <GlassButton
-                    variant="secondary"
-                    label="Configurer mon compte"
+                    variant="secondary" label="Configurer mon compte"
                     icon={<Feather name="settings" size={16} color={COLORS.primary} />}
                     onPress={() => navigation?.navigate('Settings')}
-                    fullWidth
-                    style={{ marginTop: 18, borderColor: COLORS.primary + '28' }}
+                    fullWidth style={{ marginTop: 18, borderColor: COLORS.primary + '28' }}
                     labelStyle={{ color: COLORS.primary }}
                   />
                 </View>
