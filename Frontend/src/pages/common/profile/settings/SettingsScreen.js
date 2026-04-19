@@ -16,14 +16,12 @@ import S, { COLORS, IS_TABLET } from '../ProfileStyles';
 
 const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 
-// ─── CLÉS AsyncStorage (pour préférences locales uniquement) ──────────────────
 const KEYS = {
   preferences:   'userPreferences',
   notifications: 'userNotifications',
   security:      'userSecurity',
 };
 
-// ─── ONGLETS ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'general',       icon: 'user',        label: 'Profil'        },
   { id: 'preferences',   icon: 'sliders',     label: 'Préférences'   },
@@ -33,22 +31,16 @@ const TABS = [
   { id: 'billing',       icon: 'credit-card', label: 'Abonnement'    },
 ];
 
-// ─── Badge sauvegardé ─────────────────────────────────────────────────────────
 const SavedBadge = ({ visible }) => {
   if (!visible) return null;
   return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', gap: 4,
-      backgroundColor: COLORS.successBg, paddingHorizontal: 10,
-      paddingVertical: 4, borderRadius: 20,
-    }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.successBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
       <Feather name="check" size={12} color={COLORS.success} />
       <Text style={{ fontSize: 11, color: COLORS.successText, fontWeight: '600' }}>Sauvegardé</Text>
     </View>
   );
 };
 
-// ─── Helper API ───────────────────────────────────────────────────────────────
 const apiGet = async (endpoint) => {
   const token = await AsyncStorage.getItem('userToken');
   const r = await fetch(`${SERVER_URL}${endpoint}`, {
@@ -71,7 +63,7 @@ const apiPut = async (endpoint, body) => {
   return r.json();
 };
 
-// ─── PANEL : PROFIL — lit et écrit dans la BDD ───────────────────────────────
+// ─── PANEL : PROFIL ───────────────────────────────────────────────────────────
 const GeneralPanel = () => {
   const [form, setForm]     = useState({ prenom: '', nom: '', email: '', phone: '', ville: '', wilaya: '' });
   const [saving, setSaving] = useState(false);
@@ -81,7 +73,6 @@ const GeneralPanel = () => {
   const [avatarUri, setAvatarUri] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  // ✅ Charger depuis la BDD au montage
   useEffect(() => {
     const load = async () => {
       try {
@@ -94,7 +85,6 @@ const GeneralPanel = () => {
           ville:  data.ville     || '',
           wilaya: data.wilaya    || '',
         });
-        // ✅ Avatar : cache local prioritaire, sinon URL serveur
         const cached = await AsyncStorage.getItem('cachedAvatarUri');
         if (cached) {
           setAvatarUri(cached);
@@ -103,8 +93,7 @@ const GeneralPanel = () => {
           setAvatarUri(uri);
           await AsyncStorage.setItem('cachedAvatarUri', uri);
         }
-      } catch (e) {
-        // En cas d'erreur réseau, essayer le cache
+      } catch {
         const cached = await AsyncStorage.getItem('cachedAvatarUri');
         if (cached) setAvatarUri(cached);
       } finally {
@@ -128,7 +117,6 @@ const GeneralPanel = () => {
     return Object.keys(e).length === 0;
   };
 
-  // ✅ Sauvegarde dans la BDD
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
@@ -140,10 +128,7 @@ const GeneralPanel = () => {
         ville:     form.ville,
         wilaya:    form.wilaya,
       });
-      if (data.message && !data.success) {
-        Alert.alert('Erreur', data.message);
-        return;
-      }
+      if (data.message && !data.success) { Alert.alert('Erreur', data.message); return; }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {
@@ -153,16 +138,17 @@ const GeneralPanel = () => {
     }
   };
 
-  // ✅ Upload avatar → BDD
-  const uploadAvatar = async (uri) => {
+  const uploadAvatar = async (uri, base64Data = null) => {
     setUploadingAvatar(true);
-    setAvatarUri(uri);
-    await AsyncStorage.setItem('cachedAvatarUri', uri);
+    const mimeType = uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    let base64 = base64Data;
+    if (!base64 && Platform.OS !== 'web') {
+      base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    }
+    const dataUri = base64 ? `data:${mimeType};base64,${base64}` : uri;
+    setAvatarUri(dataUri);
     try {
-      const token    = await AsyncStorage.getItem('userToken');
-      const base64   = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      const mimeType = uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-
+      const token = await AsyncStorage.getItem('userToken');
       const response = await fetch(`${SERVER_URL}/upload-avatar-base64`, {
         method: 'POST',
         headers: {
@@ -173,15 +159,16 @@ const GeneralPanel = () => {
         body: JSON.stringify({ imageBase64: base64, mimeType }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        Alert.alert('Erreur', data.message || "Impossible d'envoyer la photo");
-        return;
+      if (!response.ok) { Alert.alert('Erreur', data.message || "Impossible d'envoyer la photo"); return; }
+      if (Platform.OS === 'web') {
+        await AsyncStorage.setItem('cachedAvatarUri', dataUri);
+      } else {
+        const serverUri = `${SERVER_URL}${data.avatarUrl}?t=${Date.now()}`;
+        setAvatarUri(serverUri);
+        await AsyncStorage.setItem('cachedAvatarUri', serverUri);
       }
-      const serverUri = `${SERVER_URL}${data.avatarUrl}?t=${Date.now()}`;
-      setAvatarUri(serverUri);
-      await AsyncStorage.setItem('cachedAvatarUri', serverUri);
       Alert.alert('Succès ✅', 'Photo de profil mise à jour !');
-    } catch (error) {
+    } catch {
       Alert.alert('Erreur', "Impossible d'envoyer la photo.");
     } finally {
       setUploadingAvatar(false);
@@ -195,8 +182,8 @@ const GeneralPanel = () => {
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la caméra est nécessaire."); return; }
-          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.75 });
-          if (!result.canceled && result.assets?.length > 0) await uploadAvatar(result.assets[0].uri);
+          const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.75, base64: true });
+          if (!result.canceled && result.assets?.length > 0) await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
         },
       },
       {
@@ -204,8 +191,8 @@ const GeneralPanel = () => {
         onPress: async () => {
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
           if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la galerie est nécessaire."); return; }
-          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.75 });
-          if (!result.canceled && result.assets?.length > 0) await uploadAvatar(result.assets[0].uri);
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.75, base64: true });
+          if (!result.canceled && result.assets?.length > 0) await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
         },
       },
       { text: 'Annuler', style: 'cancel' },
@@ -235,13 +222,9 @@ const GeneralPanel = () => {
       </View>
       <Text style={S.formSub}>Informations synchronisées avec votre compte.</Text>
 
-      {/* ✅ Avatar cliquable — upload vers BDD */}
       <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.85} style={{ alignItems: 'center', marginBottom: 20 }}>
         <View style={{ width: 90, height: 90, position: 'relative' }}>
-          <LinearGradient
-            colors={['#667eea', '#764ba2']}
-            style={{ width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
-          >
+          <LinearGradient colors={['#667eea', '#764ba2']} style={{ width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
             {uploadingAvatar ? (
               <ActivityIndicator color="#fff" size="large" />
             ) : avatarUri ? (
@@ -250,34 +233,17 @@ const GeneralPanel = () => {
               <Ionicons name="person" size={40} color="#fff" />
             )}
           </LinearGradient>
-          <View style={{
-            position: 'absolute', bottom: 0, right: 0,
-            width: 28, height: 28, borderRadius: 14,
-            backgroundColor: COLORS.primary,
-            justifyContent: 'center', alignItems: 'center',
-            borderWidth: 2, borderColor: '#fff',
-          }}>
+          <View style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' }}>
             <Feather name="camera" size={13} color="#fff" />
           </View>
         </View>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, marginTop: 8 }}>
-          {form.prenom} {form.nom}
-        </Text>
-        <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
-          Appuyer pour modifier la photo
-        </Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, marginTop: 8 }}>{form.prenom} {form.nom}</Text>
+        <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>Appuyer pour modifier la photo</Text>
       </TouchableOpacity>
 
-      {/* Badge rôle */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 6,
-        backgroundColor: COLORS.primaryLight, borderRadius: 10,
-        padding: 10, marginBottom: 16,
-      }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primaryLight, borderRadius: 10, padding: 10, marginBottom: 16 }}>
         <Feather name="user" size={14} color={COLORS.primary} />
-        <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700', flex: 1 }}>
-          Compte Parent · SafeKids
-        </Text>
+        <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700', flex: 1 }}>Compte Parent · SafeKids</Text>
         <View style={{ backgroundColor: '#D1FAE5', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
           <Text style={{ fontSize: 10, color: '#059669', fontWeight: '700' }}>ACTIF</Text>
         </View>
@@ -291,11 +257,7 @@ const GeneralPanel = () => {
               <Text style={S.formLabel}>{label}</Text>
               <View style={{ position: 'relative' }}>
                 <TextInput
-                  style={[
-                    S.formInput,
-                    errors[field] && { borderColor: COLORS.error, borderWidth: 1.5 },
-                    locked && { backgroundColor: '#F8FAFC', color: COLORS.textMuted },
-                  ]}
+                  style={[S.formInput, errors[field] && { borderColor: COLORS.error, borderWidth: 1.5 }, locked && { backgroundColor: '#F8FAFC', color: COLORS.textMuted }]}
                   value={form[field]}
                   onChangeText={v => !locked && update(field, v)}
                   keyboardType={keyboard}
@@ -319,19 +281,11 @@ const GeneralPanel = () => {
       <TouchableOpacity
         onPress={handleSave}
         disabled={saving}
-        style={{
-          backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 14,
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          gap: 8, marginTop: 8, opacity: saving ? 0.7 : 1,
-          shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.3, shadowRadius: 12, elevation: 5,
-        }}
+        style={{ backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, opacity: saving ? 0.7 : 1, shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 5 }}
         activeOpacity={0.85}
       >
         {saving ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="save" size={16} color="#fff" />}
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
-          {saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}
-        </Text>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -602,7 +556,7 @@ const SecurityPanel = () => {
   );
 };
 
-// ─── PANEL : COMPTE — lit depuis la BDD ──────────────────────────────────────
+// ─── PANEL : COMPTE ───────────────────────────────────────────────────────────
 const AccountPanel = ({ onLogout, onDeleteAccount }) => {
   const [profile,  setProfile]  = useState({ prenom: '', nom: '', email: '', wilaya: '' });
   const [avatarUri, setAvatarUri] = useState(null);
@@ -619,7 +573,6 @@ const AccountPanel = ({ onLogout, onDeleteAccount }) => {
           wilaya: data.wilaya    || '',
           role:   data.role      || 'Parent',
         });
-        // ✅ Même logique avatar que GeneralPanel
         const cached = await AsyncStorage.getItem('cachedAvatarUri');
         if (cached) {
           setAvatarUri(cached);
@@ -628,7 +581,7 @@ const AccountPanel = ({ onLogout, onDeleteAccount }) => {
           setAvatarUri(uri);
           await AsyncStorage.setItem('cachedAvatarUri', uri);
         }
-      } catch (e) {
+      } catch {
         const cached = await AsyncStorage.getItem('cachedAvatarUri');
         if (cached) setAvatarUri(cached);
       } finally {
@@ -651,7 +604,6 @@ const AccountPanel = ({ onLogout, onDeleteAccount }) => {
       <Text style={S.formTitle}>Compte</Text>
       <Text style={S.formSub}>Gérez votre compte SafeKids.</Text>
 
-      {/* ✅ Avatar depuis BDD/cache */}
       <View style={{ alignItems: 'center', marginBottom: 24 }}>
         <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden' }}>
           <LinearGradient colors={['#667eea', '#764ba2']} style={{ width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' }}>
@@ -674,8 +626,8 @@ const AccountPanel = ({ onLogout, onDeleteAccount }) => {
       </View>
 
       {[
-        { label: 'Contacter le support',  sub: 'support@safekids.app', icon: 'mail',        bg: '#EDE9FE', color: COLORS.primary, onPress: () => Linking.openURL('mailto:support@safekids.app') },
-        { label: 'Centre d\'aide',         sub: 'Guides & FAQ',         icon: 'help-circle', bg: '#F1F5F9', color: COLORS.textLight, onPress: () => Linking.openURL('https://safekids.app/aide') },
+        { label: 'Contacter le support',  sub: 'support@safekids.app', icon: 'mail',        bg: '#EDE9FE', color: COLORS.primary,   onPress: () => Linking.openURL('mailto:support@safekids.app') },
+        { label: "Centre d'aide",          sub: 'Guides & FAQ',         icon: 'help-circle', bg: '#F1F5F9', color: COLORS.textLight,  onPress: () => Linking.openURL('https://safekids.app/aide') },
       ].map((item, i, arr) => (
         <TouchableOpacity key={i} style={[S.securityRow, i === arr.length - 1 && S.securityRowLast]} onPress={item.onPress} activeOpacity={0.75}>
           <View style={[S.securityIcon, { backgroundColor: item.bg }]}><Feather name={item.icon} size={16} color={item.color} /></View>
@@ -744,27 +696,43 @@ export default function SettingsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('general');
   const tabScrollRef = useRef(null);
 
+  // ✅ Fix logout web : window.location.href sur web, navigation.reset sur mobile
   const handleLogout = useCallback(() => {
     Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter ?', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Déconnexion', style: 'destructive',
         onPress: async () => {
-          await AsyncStorage.multiRemove(['userToken', 'cachedAvatarUri', KEYS.preferences, KEYS.notifications, KEYS.security]);
-          navigation?.replace('Login');
+          await AsyncStorage.multiRemove([
+            'userToken', 'cachedAvatarUri',
+            KEYS.preferences, KEYS.notifications, KEYS.security,
+          ]);
+          if (Platform.OS === 'web') {
+            window.location.href = '/';
+          } else {
+            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+          }
         },
       },
     ]);
   }, [navigation]);
 
+  // ✅ Fix delete account web
   const handleDeleteAccount = useCallback(() => {
     Alert.alert('Supprimer le compte', 'Cette action est irréversible. Toutes vos données seront définitivement supprimées.', [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer définitivement', style: 'destructive',
         onPress: async () => {
-          await AsyncStorage.multiRemove(['userToken', 'cachedAvatarUri', KEYS.preferences, KEYS.notifications, KEYS.security]);
-          navigation?.replace('Login');
+          await AsyncStorage.multiRemove([
+            'userToken', 'cachedAvatarUri',
+            KEYS.preferences, KEYS.notifications, KEYS.security,
+          ]);
+          if (Platform.OS === 'web') {
+            window.location.href = '/';
+          } else {
+            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+          }
         },
       },
     ]);
@@ -797,7 +765,6 @@ export default function SettingsScreen({ navigation }) {
           </View>
         </LinearGradient>
 
-        {/* ✅ paddingBottom 110 pour éviter que le contenu soit sous la navbar */}
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 110 }}>
           <View style={IS_TABLET ? S.contentRow : { flex: 1 }}>
             <View style={!IS_TABLET ? { paddingVertical: 6 } : null}>

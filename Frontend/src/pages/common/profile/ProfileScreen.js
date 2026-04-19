@@ -14,7 +14,35 @@ import S, { COLORS } from './ProfileStyles';
 
 const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 
-// ── Composants (tout gardé) ───────────────────────────────────────────────────
+// ── Composant avatar multi-plateforme ─────────────────────────────────────────
+// Sur web, react-native-web Image bloque les URLs ngrok (CORS).
+// On utilise un <img> HTML natif sur web, Image RN sur mobile.
+const AvatarImage = ({ uri, size = 112 }) => {
+  if (Platform.OS === 'web' && uri) {
+    return (
+      <img
+        src={uri}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          objectFit: 'cover',
+          display: 'block',
+        }}
+        onError={(e) => { e.target.style.display = 'none'; }}
+      />
+    );
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
+      resizeMode="cover"
+    />
+  );
+};
+
+// ── Composants ────────────────────────────────────────────────────────────────
 const StatCard = ({ icon, label, value, color }) => (
   <View style={S.statCard}>
     <View style={[S.statIcon, { backgroundColor: color }]}>
@@ -77,6 +105,7 @@ export default function ProfileScreen({ navigation }) {
   const [confirmMdp, setConfirmMdp] = useState('');
   const [changingPwd, setChangingPwd] = useState(false);
 
+  // avatarUri = data:image/... base64 sur web, URL https:// sur mobile
   const [avatarUri, setAvatarUri] = useState(null);
   const [imageKey, setImageKey] = useState(Date.now());
 
@@ -136,10 +165,16 @@ export default function ProfileScreen({ navigation }) {
       });
 
       if (data.avatar) {
-        const serverAvatar = `${SERVER_URL}${data.avatar}?t=${Date.now()}`;
-        setAvatarUri(serverAvatar);
-        await AsyncStorage.setItem('cachedAvatarUri', serverAvatar);
-        setImageKey(Date.now());
+        const cached = await AsyncStorage.getItem('cachedAvatarUri');
+        // Sur web : garder le base64 local pour éviter le blocage CORS
+        if (Platform.OS === 'web' && cached && cached.startsWith('data:')) {
+          setAvatarUri(cached);
+        } else {
+          const serverUri = `${SERVER_URL}${data.avatar}?t=${Date.now()}`;
+          setAvatarUri(serverUri);
+          await AsyncStorage.setItem('cachedAvatarUri', serverUri);
+          setImageKey(Date.now());
+        }
       }
     } catch (error) {
       console.error('Erreur chargement profil:', error);
@@ -190,7 +225,9 @@ export default function ProfileScreen({ navigation }) {
       }
       Alert.alert('Succès ✅', 'Profil mis à jour avec succès !');
       setIsEditing(false);
+      const prevAvatar = avatarUri;
       await loadUserProfile();
+      setAvatarUri(prevAvatar);
     } catch {
       Alert.alert('Erreur', 'Impossible de contacter le serveur.');
     } finally {
@@ -233,8 +270,8 @@ export default function ProfileScreen({ navigation }) {
       }
       Alert.alert('Succès ✅', 'Mot de passe modifié avec succès !');
       setShowPasswordModal(false);
-      setAncienMdp(''); 
-      setNouveauMdp(''); 
+      setAncienMdp('');
+      setNouveauMdp('');
       setConfirmMdp('');
     } catch {
       Alert.alert('Erreur', 'Impossible de contacter le serveur.');
@@ -243,30 +280,23 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  // ── Upload Avatar (corrigé avec base64: true) ───────────────────────────────
+  // ── Upload Avatar ──────────────────────────────────────────────────────────
   const uploadAvatar = async (uri, base64FromPicker = null) => {
-    if (!uri) {
+    if (!uri || !base64FromPicker) {
       Alert.alert('Erreur', 'Aucune image sélectionnée');
       return;
     }
 
     setUploadingAvatar(true);
 
+    // ✅ Affichage immédiat en base64 — fonctionne sur web ET mobile sans CORS
+    const mimeType = uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const dataUri = `data:${mimeType};base64,${base64FromPicker}`;
+    setAvatarUri(dataUri);
+    setImageKey(Date.now());
+
     try {
       const token = await AsyncStorage.getItem('userToken');
-      let base64 = base64FromPicker;
-      let mimeType = 'image/jpeg';
-
-      // Si on n'a pas le base64, on le récupère (fallback)
-      if (!base64) {
-        Alert.alert('Erreur', 'Impossible de récupérer l’image');
-        setUploadingAvatar(false);
-        return;
-      }
-
-      if (uri.toLowerCase().endsWith('.png')) mimeType = 'image/png';
-
-      console.log('📤 Envoi vers serveur → Taille base64:', Math.round(base64.length / 1024), 'KB | MimeType:', mimeType);
 
       const response = await fetch(`${SERVER_URL}/upload-avatar-base64`, {
         method: 'POST',
@@ -275,7 +305,7 @@ export default function ProfileScreen({ navigation }) {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-        body: JSON.stringify({ imageBase64: base64, mimeType }),
+        body: JSON.stringify({ imageBase64: base64FromPicker, mimeType }),
       });
 
       const data = await response.json();
@@ -284,76 +314,74 @@ export default function ProfileScreen({ navigation }) {
         throw new Error(data.message || "Erreur serveur lors de l'upload");
       }
 
-      const serverUri = `${SERVER_URL}${data.avatarUrl}?t=${Date.now()}`;
-      setAvatarUri(serverUri);
-      await AsyncStorage.setItem('cachedAvatarUri', serverUri);
-      setImageKey(Date.now());
+      if (Platform.OS === 'web') {
+        // ✅ Sur web : stocker le base64 pour éviter le blocage CORS au rechargement
+        await AsyncStorage.setItem('cachedAvatarUri', dataUri);
+      } else {
+        // ✅ Sur mobile : utiliser l'URL serveur normale
+        const serverUri = `${SERVER_URL}${data.avatarUrl}?t=${Date.now()}`;
+        setAvatarUri(serverUri);
+        await AsyncStorage.setItem('cachedAvatarUri', serverUri);
+        setImageKey(Date.now());
+      }
 
       Alert.alert('Succès ✅', 'Photo de profil mise à jour !');
 
     } catch (error) {
       console.error('❌ Upload error:', error);
-      Alert.alert('Erreur Upload', error.message || 'Échec de l\'upload');
-      
-      const cached = await AsyncStorage.getItem('cachedAvatarUri');
-      if (cached) setAvatarUri(cached);
+      Alert.alert('Erreur Upload', error.message || "Échec de l'upload");
+      // On garde l'aperçu local même en cas d'erreur serveur
     } finally {
       setUploadingAvatar(false);
     }
   };
 
-  // ── Caméra avec base64 ─────────────────────────────────────────────────────
+  // ── Caméra ─────────────────────────────────────────────────────────────────
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', "Autorisez l'accès à la caméra dans les paramètres.");
       return;
     }
-    
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.65,
       allowsEditing: false,
-      base64: true,               // ← Solution principale
+      base64: true,
     });
-    
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const asset = result.assets[0];
-      await uploadAvatar(asset.uri, asset.base64);
+    if (!result.canceled && result.assets?.[0]) {
+      await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
     }
   };
 
-  // ── Galerie avec base64 ────────────────────────────────────────────────────
+  // ── Galerie ────────────────────────────────────────────────────────────────
   const openGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', "Autorisez l'accès à la galerie dans les paramètres.");
       return;
     }
-    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.65,
       allowsEditing: false,
-      base64: true,               // ← Solution principale
+      base64: true,
     });
-    
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const asset = result.assets[0];
-      await uploadAvatar(asset.uri, asset.base64);
+    if (!result.canceled && result.assets?.[0]) {
+      await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
     }
   };
 
-  const handleModalCamera = async () => { 
-    setShowAvatarModal(false); 
-    await new Promise(r => setTimeout(r, 350)); 
-    await openCamera(); 
+  const handleModalCamera = async () => {
+    setShowAvatarModal(false);
+    await new Promise(r => setTimeout(r, 350));
+    await openCamera();
   };
-  
-  const handleModalGallery = async () => { 
-    setShowAvatarModal(false); 
-    await new Promise(r => setTimeout(r, 350)); 
-    await openGallery(); 
+
+  const handleModalGallery = async () => {
+    setShowAvatarModal(false);
+    await new Promise(r => setTimeout(r, 350));
+    await openGallery();
   };
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -465,16 +493,7 @@ export default function ProfileScreen({ navigation }) {
                   {uploadingAvatar ? (
                     <ActivityIndicator color="#fff" size="large" />
                   ) : avatarUri ? (
-                    <Image
-                      key={imageKey}
-                      source={{ uri: avatarUri }}
-                      style={{ width: 112, height: 112, borderRadius: 56 }}
-                      resizeMode="cover"
-                      onError={(error) => {
-                        console.error('Image error:', error);
-                        setAvatarUri(null);
-                      }}
-                    />
+                    <AvatarImage key={imageKey} uri={avatarUri} size={112} />
                   ) : (
                     <Ionicons name="person" size={54} color="#fff" />
                   )}
@@ -497,6 +516,24 @@ export default function ProfileScreen({ navigation }) {
 
               <Text style={{ fontSize: 22, fontWeight: '800', color: '#1E293B', marginTop: 14, letterSpacing: -0.4 }}>
                 {userData.prenom} {userData.nom}
+              </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 5,
+                  backgroundColor: '#EDE9FE', borderRadius: 20,
+                  paddingHorizontal: 12, paddingVertical: 5,
+                }}>
+                  <Feather name="check-circle" size={13} color="#7C3AED" />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#7C3AED' }}>Vérifié</Text>
+                </View>
+                <View style={{ backgroundColor: '#F1F5F9', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748B' }}>{userData.role}</Text>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 10 }}>
+                Appuyez sur 📷 pour changer la photo
               </Text>
             </View>
 
@@ -536,7 +573,6 @@ export default function ProfileScreen({ navigation }) {
 
             {/* BOUTONS */}
             <View style={{ paddingHorizontal: 16, gap: 10, paddingBottom: 8 }}>
-
               <TouchableOpacity
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -608,17 +644,15 @@ export default function ProfileScreen({ navigation }) {
                 <Feather name="lock" size={18} color="#EF4444" />
                 <Text style={{ fontSize: 15, fontWeight: '700', color: '#EF4444' }}>Changer le mot de passe</Text>
               </TouchableOpacity>
-
             </View>
 
             <View style={{ alignItems: 'center', paddingTop: 20, paddingBottom: 6 }}>
               <Text style={{ fontSize: 11, color: '#CBD5E1' }}>SafeKids v2.1.0 · © 2026</Text>
             </View>
-
           </ScrollView>
         </Animated.View>
 
-        {/* MODALS (tout gardé) */}
+        {/* ── MODAL PHOTO PLEIN ÉCRAN ───────────────────────────────────── */}
         <Modal visible={showPhotoModal} transparent animationType="fade" onRequestClose={() => setShowPhotoModal(false)}>
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)', justifyContent: 'center', alignItems: 'center' }}>
             <TouchableOpacity
@@ -634,7 +668,7 @@ export default function ProfileScreen({ navigation }) {
             </TouchableOpacity>
 
             {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={{ width: 280, height: 280, borderRadius: 140 }} resizeMode="cover" />
+              <AvatarImage uri={avatarUri} size={280} />
             ) : (
               <View style={{ width: 280, height: 280, borderRadius: 140, backgroundColor: '#7C3AED', justifyContent: 'center', alignItems: 'center' }}>
                 <Ionicons name="person" size={110} color="#fff" />
@@ -660,6 +694,7 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </Modal>
 
+        {/* ── MODAL CAMÉRA / GALERIE ───────────────────────────────────── */}
         <Modal visible={showAvatarModal} transparent animationType="slide" onRequestClose={() => setShowAvatarModal(false)}>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}
@@ -709,6 +744,7 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </Modal>
 
+        {/* ── MODAL MOT DE PASSE ───────────────────────────────────────── */}
         <Modal visible={showPasswordModal} transparent animationType="slide" onRequestClose={() => setShowPasswordModal(false)}>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}
@@ -736,7 +772,7 @@ export default function ProfileScreen({ navigation }) {
                     <TextInput
                       style={{
                         backgroundColor: '#F1F5F9', borderRadius: 12, padding: 14,
-                        fontSize: 15, color: '#1E293B', borderWidth: 1, borderColor: '#E2E8F0'
+                        fontSize: 15, color: '#1E293B', borderWidth: 1, borderColor: '#E2E8F0',
                       }}
                       value={item.value}
                       onChangeText={item.setter}

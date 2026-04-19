@@ -2,18 +2,20 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Switch, StatusBar, Alert, ActivityIndicator, Modal, Linking, Image,
+  Switch, StatusBar, Alert, ActivityIndicator, Modal, Linking, Image, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AdminLayout from '../../../../components/Navigation/AdminNavigation';
 import S, { COLORS, IS_TABLET } from '../ProfileStyles';
 
+const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+
 const KEYS = {
-  profile:       'adminProfile',
   preferences:   'adminPreferences',
   notifications: 'adminNotifications',
   security:      'adminSecurity',
@@ -39,64 +41,203 @@ const SavedBadge = ({ visible }) => {
   );
 };
 
-// ─── PANEL : PROFIL ADMIN ─────────────────────────────────────────────────────
+// ─── Helper API ───────────────────────────────────────────────────────────────
+const apiGet = async (endpoint) => {
+  const token = await AsyncStorage.getItem('userToken');
+  const r = await fetch(`${SERVER_URL}${endpoint}`, {
+    headers: { 'Authorization': `Bearer ${token}`, 'ngrok-skip-browser-warning': 'true' },
+  });
+  return r.json();
+};
+
+const apiPut = async (endpoint, body) => {
+  const token = await AsyncStorage.getItem('userToken');
+  const r = await fetch(`${SERVER_URL}${endpoint}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+};
+
+// ─── PANEL : PROFIL ADMIN — lit et écrit dans la BDD (identique au parent) ───
 const GeneralPanel = () => {
-  const [form, setForm] = useState({ prenom: 'Nassim', nom: 'Lounici', email: 'admin@safekids.app', phone: '+213 555 000 001', departement: 'Direction Technique', avatar: null });
+  const [form, setForm]     = useState({ prenom: '', nom: '', email: '', phone: '', departement: '' });
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
-  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [errors,  setErrors]  = useState({});
+  const [avatarUri, setAvatarUri] = useState(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  // ✅ Charger depuis la BDD au montage
   useEffect(() => {
-    AsyncStorage.getItem(KEYS.profile).then(d => { if (d) setForm(prev => ({ ...prev, ...JSON.parse(d) })); }).catch(() => {});
+    const load = async () => {
+      try {
+        const data = await apiGet('/profile');
+        setForm({
+          prenom:      data.prenom      || '',
+          nom:         data.nom         || '',
+          email:       data.email       || '',
+          phone:       data.telephone   || '',
+          departement: data.departement || '',
+        });
+        // ✅ Avatar : cache local prioritaire, sinon URL serveur
+        const cached = await AsyncStorage.getItem('adminCachedAvatarUri');
+        if (cached) {
+          setAvatarUri(cached);
+        } else if (data.avatar) {
+          const uri = `${SERVER_URL}${data.avatar}?t=${Date.now()}`;
+          setAvatarUri(uri);
+          await AsyncStorage.setItem('adminCachedAvatarUri', uri);
+        }
+      } catch {
+        const cached = await AsyncStorage.getItem('adminCachedAvatarUri');
+        if (cached) setAvatarUri(cached);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
-  const update = (field, value) => { setForm(prev => ({ ...prev, [field]: value })); setErrors(prev => ({ ...prev, [field]: null })); setSaved(false); };
+  const update = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    setErrors(prev => ({ ...prev, [field]: null }));
+    setSaved(false);
+  };
 
   const validate = () => {
     const e = {};
     if (!form.prenom.trim()) e.prenom = 'Requis';
     if (!form.nom.trim())    e.nom    = 'Requis';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Email invalide';
-    if (form.phone.trim().length < 8) e.phone = 'Numéro invalide';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
+  // ✅ Sauvegarde dans la BDD
   const handleSave = async () => {
     if (!validate()) return;
     setSaving(true);
     try {
-      const existing = await AsyncStorage.getItem(KEYS.profile);
-      const merged = { ...(existing ? JSON.parse(existing) : {}), ...form };
-      await AsyncStorage.setItem(KEYS.profile, JSON.stringify(merged));
+      const data = await apiPut('/profile', {
+        prenom:      form.prenom,
+        nom:         form.nom,
+        telephone:   form.phone,
+        departement: form.departement,
+      });
+      if (data.message && !data.success) {
+        Alert.alert('Erreur', data.message);
+        return;
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder. Réessayez.'); }
-    finally { setSaving(false); }
+    } catch {
+      Alert.alert('Erreur', 'Impossible de contacter le serveur.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ✅ Upload avatar → BDD (même logique que SettingsScreen parent)
+  const uploadAvatar = async (uri, base64Data = null) => {
+    setUploadingAvatar(true);
+
+    const mimeType = uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+    // Sur web : base64 passé directement depuis le picker
+    // Sur mobile : lire avec FileSystem
+    let base64 = base64Data;
+    if (!base64 && Platform.OS !== 'web') {
+      base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    }
+
+    // ✅ Affichage immédiat local
+    const dataUri = base64 ? `data:${mimeType};base64,${base64}` : uri;
+    setAvatarUri(dataUri);
+
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await fetch(`${SERVER_URL}/upload-avatar-base64`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify({ imageBase64: base64, mimeType }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        Alert.alert('Erreur', data.message || "Impossible d'envoyer la photo");
+        return;
+      }
+      if (Platform.OS === 'web') {
+        await AsyncStorage.setItem('adminCachedAvatarUri', dataUri);
+      } else {
+        const serverUri = `${SERVER_URL}${data.avatarUrl}?t=${Date.now()}`;
+        setAvatarUri(serverUri);
+        await AsyncStorage.setItem('adminCachedAvatarUri', serverUri);
+      }
+      Alert.alert('Succès ✅', 'Photo de profil mise à jour !');
+    } catch {
+      Alert.alert('Erreur', "Impossible d'envoyer la photo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handlePickAvatar = () => {
     Alert.alert('Photo de profil', 'Choisissez une option', [
-      { text: 'Prendre une photo', onPress: async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la caméra est nécessaire."); return; }
-        const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 });
-        if (!result.canceled) { const uri = result.assets[0].uri; const updated = { ...form, avatar: uri }; setForm(updated); await AsyncStorage.setItem(KEYS.profile, JSON.stringify(updated)); }
-      }},
-      { text: 'Choisir depuis la galerie', onPress: async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la galerie est nécessaire."); return; }
-        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 });
-        if (!result.canceled) { const uri = result.assets[0].uri; const updated = { ...form, avatar: uri }; setForm(updated); await AsyncStorage.setItem(KEYS.profile, JSON.stringify(updated)); }
-      }},
+      {
+        text: 'Prendre une photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la caméra est nécessaire."); return; }
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true, aspect: [1, 1], quality: 0.75, base64: true,
+          });
+          if (!result.canceled && result.assets?.length > 0) {
+            await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
+          }
+        },
+      },
+      {
+        text: 'Choisir depuis la galerie',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') { Alert.alert('Permission refusée', "L'accès à la galerie est nécessaire."); return; }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true, aspect: [1, 1], quality: 0.75, base64: true,
+          });
+          if (!result.canceled && result.assets?.length > 0) {
+            await uploadAvatar(result.assets[0].uri, result.assets[0].base64);
+          }
+        },
+      },
       { text: 'Annuler', style: 'cancel' },
     ]);
   };
 
+  if (loading) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ marginTop: 12, color: COLORS.textMuted }}>Chargement...</Text>
+      </View>
+    );
+  }
+
   const FIELDS = [
     [{ field: 'prenom', label: 'Prénom',      keyboard: 'default'       }, { field: 'nom',   label: 'Nom',       keyboard: 'default'   }],
-    [{ field: 'email',  label: 'Email admin', keyboard: 'email-address'  }, { field: 'phone', label: 'Téléphone', keyboard: 'phone-pad' }],
-    [{ field: 'departement', label: 'Département', keyboard: 'default'   }],
+    [{ field: 'email',  label: 'Email admin', keyboard: 'email-address', locked: true }, { field: 'phone', label: 'Téléphone', keyboard: 'phone-pad' }],
+    [{ field: 'departement', label: 'Département', keyboard: 'default'  }],
   ];
 
   return (
@@ -105,43 +246,101 @@ const GeneralPanel = () => {
         <Text style={S.formTitle}>Profil administrateur</Text>
         <SavedBadge visible={saved} />
       </View>
-      <Text style={S.formSub}>Modifiez vos informations personnelles.</Text>
+      <Text style={S.formSub}>Informations synchronisées avec votre compte.</Text>
 
+      {/* ✅ Avatar cliquable — upload vers BDD */}
       <TouchableOpacity onPress={handlePickAvatar} activeOpacity={0.85} style={{ alignItems: 'center', marginBottom: 20 }}>
-        <View style={{ width: 80, height: 80, position: 'relative' }}>
-          <LinearGradient colors={['#667eea', '#764ba2']} style={{ width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' }}>
-            {form.avatar ? <Image source={{ uri: form.avatar }} style={{ width: 80, height: 80, borderRadius: 40 }} /> : <Ionicons name="person" size={36} color="#fff" />}
+        <View style={{ width: 90, height: 90, position: 'relative' }}>
+          <LinearGradient
+            colors={['#4C1D95', '#1E1B4B']}
+            style={{ width: 90, height: 90, borderRadius: 45, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}
+          >
+            {uploadingAvatar ? (
+              <ActivityIndicator color="#fff" size="large" />
+            ) : avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={{ width: 90, height: 90, borderRadius: 45 }} onError={() => setAvatarUri(null)} />
+            ) : (
+              <Ionicons name="person" size={40} color="#fff" />
+            )}
           </LinearGradient>
-          <View style={{ position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' }}>
+          <View style={{
+            position: 'absolute', bottom: 0, right: 0,
+            width: 28, height: 28, borderRadius: 14,
+            backgroundColor: COLORS.primary,
+            justifyContent: 'center', alignItems: 'center',
+            borderWidth: 2, borderColor: '#fff',
+          }}>
             <Feather name="camera" size={13} color="#fff" />
           </View>
         </View>
-        <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '600', marginTop: 8 }}>{form.prenom} {form.nom}</Text>
-        <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>Appuyer pour modifier la photo</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, marginTop: 8 }}>
+          {form.prenom} {form.nom}
+        </Text>
+        <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+          Appuyer pour modifier la photo
+        </Text>
       </TouchableOpacity>
 
+      {/* Badge rôle */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primaryLight, borderRadius: 10, padding: 10, marginBottom: 16 }}>
         <Feather name="shield" size={14} color={COLORS.primary} />
-        <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700' }}>Super Administrateur · ADM-2024-001</Text>
-        <Feather name="lock" size={12} color={COLORS.primary} style={{ marginLeft: 'auto' }} />
+        <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700', flex: 1 }}>
+          Super Administrateur · SafeKids
+        </Text>
+        <View style={{ backgroundColor: '#D1FAE5', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
+          <Text style={{ fontSize: 10, color: '#059669', fontWeight: '700' }}>ACTIF</Text>
+        </View>
       </View>
 
       <Text style={S.formSectionTitle}>Coordonnées</Text>
       {FIELDS.map((row, ri) => (
         <View key={ri} style={S.formRow}>
-          {row.map(({ field, label, keyboard }) => (
+          {row.map(({ field, label, keyboard, locked }) => (
             <View key={field} style={S.formField}>
               <Text style={S.formLabel}>{label}</Text>
-              <TextInput style={[S.formInput, errors[field] && { borderColor: COLORS.error, borderWidth: 1 }]} value={form[field]} onChangeText={v => update(field, v)} keyboardType={keyboard} autoCapitalize={keyboard === 'email-address' ? 'none' : 'words'} returnKeyType="done" placeholderTextColor={COLORS.textMuted} />
+              <View style={{ position: 'relative' }}>
+                <TextInput
+                  style={[
+                    S.formInput,
+                    errors[field] && { borderColor: COLORS.error, borderWidth: 1.5 },
+                    locked && { backgroundColor: '#F8FAFC', color: COLORS.textMuted },
+                  ]}
+                  value={form[field]}
+                  onChangeText={v => !locked && update(field, v)}
+                  keyboardType={keyboard}
+                  autoCapitalize={keyboard === 'email-address' ? 'none' : 'words'}
+                  returnKeyType="done"
+                  placeholderTextColor={COLORS.textMuted}
+                  editable={!locked}
+                />
+                {locked && (
+                  <View style={{ position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' }}>
+                    <Feather name="lock" size={13} color="#D97706" />
+                  </View>
+                )}
+              </View>
               {errors[field] && <Text style={{ fontSize: 10, color: COLORS.error, marginTop: 2 }}>{errors[field]}</Text>}
             </View>
           ))}
         </View>
       ))}
 
-      <TouchableOpacity onPress={handleSave} disabled={saving} style={{ backgroundColor: COLORS.primary, borderRadius: 12, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, opacity: saving ? 0.7 : 1 }} activeOpacity={0.85}>
+      <TouchableOpacity
+        onPress={handleSave}
+        disabled={saving}
+        style={{
+          backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 14,
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+          gap: 8, marginTop: 8, opacity: saving ? 0.7 : 1,
+          shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.3, shadowRadius: 12, elevation: 5,
+        }}
+        activeOpacity={0.85}
+      >
         {saving ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="save" size={16} color="#fff" />}
-        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{saving ? 'Sauvegarde...' : 'Sauvegarder'}</Text>
+        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
+          {saving ? 'Sauvegarde...' : 'Sauvegarder les modifications'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -166,9 +365,9 @@ const SystemPanel = () => {
   };
 
   const TOGGLES = [
-    { key: 'maintenanceMode', label: 'Mode maintenance',    sub: 'Bloquer les connexions utilisateurs', icon: 'tool',     danger: true  },
-    { key: 'debugLogs',       label: 'Journaux de débogage',sub: 'Activer les logs détaillés',          icon: 'terminal', danger: false },
-    { key: 'autoBackup',      label: 'Sauvegarde auto',     sub: 'Sauvegarde quotidienne à 02h00',      icon: 'database', danger: false },
+    { key: 'maintenanceMode', label: 'Mode maintenance',     sub: 'Bloquer les connexions utilisateurs', icon: 'tool',     danger: true  },
+    { key: 'debugLogs',       label: 'Journaux de débogage', sub: 'Activer les logs détaillés',          icon: 'terminal', danger: false },
+    { key: 'autoBackup',      label: 'Sauvegarde auto',      sub: 'Sauvegarde quotidienne à 02h00',      icon: 'database', danger: false },
   ];
 
   return (
@@ -250,10 +449,36 @@ const SecurityPanel = () => {
     AsyncStorage.getItem(KEYS.security).then(d => { if (d) { const s = JSON.parse(d); if (s.twoFA !== undefined) setTwoFA(s.twoFA); if (s.biometrics !== undefined) setBiometrics(s.biometrics); if (s.ipWhitelist !== undefined) setIpWhitelist(s.ipWhitelist); if (s.auditLog !== undefined) setAuditLog(s.auditLog); } }).catch(() => {});
   }, []);
 
-  const saveSecurity = async (updates) => { const current = { twoFA, biometrics, ipWhitelist, auditLog, ...updates }; await AsyncStorage.setItem(KEYS.security, JSON.stringify(current)); };
+  const saveSecurity = async (updates) => {
+    const current = { twoFA, biometrics, ipWhitelist, auditLog, ...updates };
+    await AsyncStorage.setItem(KEYS.security, JSON.stringify(current));
+  };
+
   const checkStrength = (pw) => { let score = 0; if (pw.length >= 10) score++; if (/[A-Z]/.test(pw)) score++; if (/[0-9]/.test(pw)) score++; if (/[^A-Za-z0-9]/.test(pw)) score++; setPwStrength(score); };
-  const validatePw = () => { const e = {}; if (!passwords.current) e.current = 'Requis'; if (passwords.newPass.length < 8) e.newPass = 'Minimum 8 caractères'; if (passwords.newPass !== passwords.confirm) e.confirm = 'Les mots de passe ne correspondent pas'; setPwErrors(e); return Object.keys(e).length === 0; };
-  const handlePwChange = async () => { if (!validatePw()) return; setPwSaving(true); await new Promise(r => setTimeout(r, 1200)); setPwSaving(false); setShowPwModal(false); setPasswords({ current: '', newPass: '', confirm: '' }); setPwStrength(0); Alert.alert('✅ Mot de passe modifié', 'Le mot de passe administrateur a été mis à jour.'); };
+
+  // ✅ Changer mot de passe via la BDD (identique au SecurityPanel parent)
+  const handlePwChange = async () => {
+    const e = {};
+    if (!passwords.current)                      e.current = 'Requis';
+    if (passwords.newPass.length < 8)            e.newPass = 'Minimum 8 caractères';
+    if (passwords.newPass !== passwords.confirm) e.confirm = 'Les mots de passe ne correspondent pas';
+    setPwErrors(e);
+    if (Object.keys(e).length > 0) return;
+
+    setPwSaving(true);
+    try {
+      const data = await apiPut('/change-password', {
+        ancienMotDePasse:  passwords.current,
+        nouveauMotDePasse: passwords.newPass,
+      });
+      if (data.message && !data.success) { Alert.alert('Erreur', data.message); return; }
+      setShowPwModal(false);
+      setPasswords({ current: '', newPass: '', confirm: '' }); setPwStrength(0);
+      Alert.alert('✅ Succès', 'Mot de passe administrateur modifié avec succès.');
+    } catch { Alert.alert('Erreur', 'Impossible de contacter le serveur.'); }
+    finally { setPwSaving(false); }
+  };
+
   const handle2FA = () => { if (twoFA) { Alert.alert('⚠ Désactiver 2FA', "En tant qu'administrateur, la désactivation du 2FA est déconseillée.", [{ text: 'Annuler', style: 'cancel' }, { text: 'Désactiver quand même', style: 'destructive', onPress: () => { setTwoFA(false); saveSecurity({ twoFA: false }); } }]); } else { Alert.alert('Activer 2FA', 'Un code OTP vous sera demandé à chaque connexion admin.', [{ text: 'Annuler', style: 'cancel' }, { text: 'Activer', onPress: () => { setTwoFA(true); saveSecurity({ twoFA: true }); } }]); } };
   const handleBiometrics = async () => { if (!bioAvailable) { Alert.alert('Non disponible', 'Aucune biométrie configurée sur cet appareil.'); return; } if (biometrics) { Alert.alert('Désactiver biométrie', 'Désactiver Face ID / Empreinte ?', [{ text: 'Annuler', style: 'cancel' }, { text: 'Désactiver', style: 'destructive', onPress: () => { setBiometrics(false); saveSecurity({ biometrics: false }); } }]); } else { const result = await LocalAuthentication.authenticateAsync({ promptMessage: 'Authentifiez-vous pour activer cette fonctionnalité' }); if (result.success) { setBiometrics(true); saveSecurity({ biometrics: true }); Alert.alert('✅ Activé', 'Biométrie admin activée.'); } else Alert.alert('Échec', 'Authentification biométrique échouée.'); } };
 
@@ -296,7 +521,7 @@ const SecurityPanel = () => {
 
       <Modal visible={showPwModal} transparent animationType="slide" onRequestClose={() => setShowPwModal(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 42 : 28 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <Text style={{ fontSize: 17, fontWeight: '800', color: COLORS.text }}>Changer le mot de passe admin</Text>
               <TouchableOpacity onPress={() => { setShowPwModal(false); setPasswords({ current: '', newPass: '', confirm: '' }); setPwStrength(0); setPwErrors({}); }}><Feather name="x" size={22} color={COLORS.textMuted} /></TouchableOpacity>
@@ -305,7 +530,7 @@ const SecurityPanel = () => {
               <View key={key} style={{ marginBottom: 12 }}>
                 <Text style={S.formLabel}>{label}</Text>
                 <View style={{ position: 'relative' }}>
-                  <TextInput style={[S.formInput, pwErrors[key] && { borderColor: COLORS.error, borderWidth: 1 }, { paddingRight: 44 }]} value={passwords[key]} onChangeText={v => { setPasswords(p => ({ ...p, [key]: v })); setPwErrors(p => ({ ...p, [key]: null })); if (key === 'newPass') checkStrength(v); }} secureTextEntry={!showPw[key]} placeholder="••••••••" placeholderTextColor={COLORS.textMuted} returnKeyType="done" autoCapitalize="none" />
+                  <TextInput style={[S.formInput, pwErrors[key] && { borderColor: COLORS.error, borderWidth: 1.5 }, { paddingRight: 44 }]} value={passwords[key]} onChangeText={v => { setPasswords(p => ({ ...p, [key]: v })); setPwErrors(p => ({ ...p, [key]: null })); if (key === 'newPass') checkStrength(v); }} secureTextEntry={!showPw[key]} placeholder="••••••••" placeholderTextColor={COLORS.textMuted} returnKeyType="done" autoCapitalize="none" />
                   <TouchableOpacity onPress={() => setShowPw(p => ({ ...p, [key]: !p[key] }))} style={{ position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' }}>
                     <Feather name={showPw[key] ? 'eye-off' : 'eye'} size={16} color={COLORS.textMuted} />
                   </TouchableOpacity>
@@ -413,32 +638,81 @@ const UsersPanel = () => {
   );
 };
 
-// ─── PANEL : COMPTE ADMIN ─────────────────────────────────────────────────────
+// ─── PANEL : COMPTE ADMIN — lit depuis la BDD (identique au AccountPanel parent) ─
 const AccountPanel = ({ onLogout }) => {
-  const [profile, setProfile] = useState({ prenom: 'Nassim', nom: 'Lounici', email: 'admin@safekids.app', avatar: null, role: 'Super Administrateur', identifiant: 'ADM-2024-001' });
-  useEffect(() => { AsyncStorage.getItem(KEYS.profile).then(d => { if (d) setProfile(prev => ({ ...prev, ...JSON.parse(d) })); }).catch(() => {}); }, []);
+  const [profile,   setProfile]   = useState({ prenom: '', nom: '', email: '', wilaya: '', role: 'Super Administrateur' });
+  const [avatarUri, setAvatarUri] = useState(null);
+  const [loading,   setLoading]   = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await apiGet('/profile');
+        setProfile({
+          prenom: data.prenom    || '',
+          nom:    data.nom       || '',
+          email:  data.email     || '',
+          wilaya: data.wilaya    || '',
+          role:   data.role      || 'Super Administrateur',
+        });
+        // ✅ Même logique avatar que GeneralPanel admin
+        const cached = await AsyncStorage.getItem('adminCachedAvatarUri');
+        if (cached) {
+          setAvatarUri(cached);
+        } else if (data.avatar) {
+          const uri = `${SERVER_URL}${data.avatar}?t=${Date.now()}`;
+          setAvatarUri(uri);
+          await AsyncStorage.setItem('adminCachedAvatarUri', uri);
+        }
+      } catch {
+        const cached = await AsyncStorage.getItem('adminCachedAvatarUri');
+        if (cached) setAvatarUri(cached);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
 
   return (
     <View>
       <Text style={S.formTitle}>Compte administrateur</Text>
       <Text style={S.formSub}>Informations et actions sur votre compte admin.</Text>
-      <View style={{ alignItems: 'center', marginBottom: 20 }}>
-        <View style={{ width: 72, height: 72 }}>
-          <LinearGradient colors={['#667eea', '#764ba2']} style={{ width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' }}>
-            {profile.avatar ? <Image source={{ uri: profile.avatar }} style={{ width: 72, height: 72, borderRadius: 36 }} /> : <Ionicons name="person" size={32} color="#fff" />}
+
+      {/* ✅ Avatar depuis BDD/cache */}
+      <View style={{ alignItems: 'center', marginBottom: 24 }}>
+        <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden' }}>
+          <LinearGradient colors={['#4C1D95', '#1E1B4B']} style={{ width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' }}>
+            {avatarUri
+              ? <Image source={{ uri: avatarUri }} style={{ width: 80, height: 80, borderRadius: 40 }} onError={() => setAvatarUri(null)} />
+              : <Ionicons name="person" size={36} color="#fff" />
+            }
           </LinearGradient>
         </View>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.text, marginTop: 10 }}>{profile.prenom} {profile.nom}</Text>
-        <Text style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>{profile.email}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, backgroundColor: COLORS.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
+        <Text style={{ fontSize: 16, fontWeight: '800', color: '#1E293B', marginTop: 12, letterSpacing: -0.3 }}>
+          {profile.prenom} {profile.nom}
+        </Text>
+        <Text style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 3 }}>{profile.email}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, backgroundColor: COLORS.primaryLight, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 }}>
           <Feather name="shield" size={12} color={COLORS.primary} />
-          <Text style={{ fontSize: 11, color: COLORS.primary, fontWeight: '600' }}>{profile.role} · {profile.identifiant}</Text>
+          <Text style={{ fontSize: 11, color: COLORS.primary, fontWeight: '600' }}>
+            Compte vérifié · {profile.role}
+          </Text>
         </View>
       </View>
+
       {[
-        { label: 'Support technique', sub: 'support@safekids.app', icon: 'mail', bg: COLORS.primaryLight, color: COLORS.primary, onPress: () => Linking.openURL('mailto:support@safekids.app') },
-        { label: 'Documentation admin', sub: 'Guides techniques & API', icon: 'book', bg: '#F1F5F9', color: COLORS.textLight, onPress: () => Linking.openURL('https://safekids.app/admin/docs') },
-        { label: "Exporter mon rapport d'activité", sub: 'Toutes mes actions ce mois', icon: 'file-text', bg: '#D1FAE5', color: COLORS.success, onPress: () => Alert.alert("Rapport d'activité", 'Le rapport admin a été envoyé à votre email.') },
+        { label: 'Support technique',              sub: 'support@safekids.app',          icon: 'mail',      bg: COLORS.primaryLight, color: COLORS.primary, onPress: () => Linking.openURL('mailto:support@safekids.app') },
+        { label: 'Documentation admin',            sub: 'Guides techniques & API',       icon: 'book',      bg: '#F1F5F9',           color: COLORS.textLight, onPress: () => Linking.openURL('https://safekids.app/admin/docs') },
+        { label: "Exporter mon rapport d'activité",sub: 'Toutes mes actions ce mois',    icon: 'file-text', bg: '#D1FAE5',           color: COLORS.success,   onPress: () => Alert.alert("Rapport d'activité", 'Le rapport admin a été envoyé à votre email.') },
       ].map((item, i, arr) => (
         <TouchableOpacity key={i} style={[S.securityRow, i === arr.length - 1 && S.securityRowLast]} onPress={item.onPress} activeOpacity={0.75}>
           <View style={[S.securityIcon, { backgroundColor: item.bg }]}><Feather name={item.icon} size={16} color={item.color} /></View>
@@ -446,6 +720,7 @@ const AccountPanel = ({ onLogout }) => {
           <Feather name="chevron-right" size={16} color={COLORS.textMuted} />
         </TouchableOpacity>
       ))}
+
       <View style={S.dangerZone}>
         <Text style={S.dangerTitle}>⚠ Zone critique</Text>
         <TouchableOpacity onPress={onLogout} style={[S.dangerRow, S.dangerRowLast]} activeOpacity={0.75}>
@@ -466,7 +741,17 @@ export default function AdminSettingsScreen({ navigation }) {
   const handleLogout = useCallback(() => {
     Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter du panneau admin ?', [
       { text: 'Annuler', style: 'cancel' },
-      { text: 'Déconnexion', style: 'destructive', onPress: () => navigation?.replace('Login') },
+      {
+        text: 'Déconnexion', style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.multiRemove(['userToken', 'adminCachedAvatarUri', KEYS.preferences, KEYS.notifications, KEYS.security, KEYS.system]);
+          if (Platform.OS === 'web') {
+            window.location.href = '/';
+          } else {
+            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+          }
+        },
+      },
     ]);
   }, [navigation]);
 
@@ -483,22 +768,22 @@ export default function AdminSettingsScreen({ navigation }) {
   };
 
   return (
-    // ✅ AdminLayout wrappe tout — même pattern que SettingsScreen parent avec ParentLayout
     <AdminLayout activeTab="settings">
       <View style={S.container}>
         <StatusBar barStyle="light-content" />
 
-        <LinearGradient colors={['#667eea', '#764ba2']} style={S.header}>
+        <LinearGradient colors={['#4C1D95', '#1E1B4B']} style={S.header}>
           <TouchableOpacity onPress={() => navigation?.goBack()} style={S.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Feather name="arrow-left" size={18} color="#fff" />
           </TouchableOpacity>
           <View style={S.headerTitleWrap}>
             <Text style={S.headerTitle}>Paramètres système</Text>
-            <Text style={S.headerSub}>Panneau d'administration</Text>
+            <Text style={S.headerSub}>Synchronisé avec votre compte</Text>
           </View>
         </LinearGradient>
 
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {/* ✅ paddingBottom 110 pour éviter que le contenu soit sous la navbar */}
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 110 }}>
           <View style={IS_TABLET ? S.contentRow : { flex: 1 }}>
             <View style={!IS_TABLET ? { paddingVertical: 6 } : null}>
               <ScrollView ref={tabScrollRef} horizontal={!IS_TABLET} showsHorizontalScrollIndicator={false} contentContainerStyle={!IS_TABLET ? S.settingsNavScroll : S.settingsNav}>
@@ -513,7 +798,7 @@ export default function AdminSettingsScreen({ navigation }) {
                 })}
               </ScrollView>
             </View>
-            <View style={[S.formPanel, { paddingBottom: 80 }]}>
+            <View style={[S.formPanel, { paddingBottom: 20 }]}>
               {renderPanel()}
               <Text style={S.version}>SafeKids v2.1.0 · Panneau Admin · © 2026</Text>
             </View>
