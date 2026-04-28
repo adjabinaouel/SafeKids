@@ -1,9 +1,4 @@
-// src/pages/admin/ComptesScreen/ComptesScreen.js
-// ✅ CORRECTIONS :
-//   1. Spécialités → liste fixe hardcodée côté mobile, ZERO dépendance BDD
-//   2. Téléphone   → validation 10 chiffres, 05/06/07, formatage automatique
-//   3. Disponibilité → nouveau sélecteur multi-jours (Samedi→Vendredi)
-//   4. Création médecin → 100% fonctionnel
+
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -18,12 +13,98 @@ import AdminLayout from '../../../components/Navigation/AdminNavigation';
 import { COLORS } from '../../../theme';
 import S from './ComptesStyles';
 
+function xAlert(title, message) {
+  if (Platform.OS === 'web') {
+    window.alert(message ? `${title}\n\n${message}` : title);
+  } else {
+    Alert.alert(title, message);
+  }
+}
+
+function xConfirm(title, message, onConfirm, onCancel) {
+  if (Platform.OS === 'web') {
+    const msg = message ? `${title}\n\n${message}` : title;
+    if (window.confirm(msg)) {
+      onConfirm();
+    } else {
+      onCancel && onCancel();
+    }
+  } else {
+    Alert.alert(title, message, [
+      { text: 'Annuler', style: 'cancel', onPress: onCancel },
+      { text: 'Supprimer', style: 'destructive', onPress: onConfirm },
+    ]);
+  }
+}
+
+
+const PasswordInput = ({ value, onChange, placeholder, style, show, medecinEmail = '' }) => {
+
+  // Sur Web : on utilise un vrai <input> HTML pour contrôler l'autocomplete
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{ position: 'relative' }}>
+        {!!medecinEmail && (
+          <input
+            type="email"
+            name="username"
+            value={medecinEmail}
+            readOnly
+            autoComplete="username"
+            style={{ display: 'none' }}
+          />
+        )}
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder || '••••••••'}
+          autoComplete="new-password"
+          readOnly
+          onFocus={e => {
+            e.target.removeAttribute('readonly');
+            e.target.style.borderColor = '#7C3AED';
+          }}
+          onBlur={e => { e.target.style.borderColor = '#E5E7EB'; }}
+          style={{
+            width: '100%',
+            padding: '13px 48px 13px 14px',
+            borderRadius: '12px',
+            border: '1.5px solid #E5E7EB',
+            fontSize: '14px',
+            color: '#1F2937',
+            backgroundColor: '#F9FAFB',
+            outline: 'none',
+            boxSizing: 'border-box',
+            fontFamily: 'inherit',
+            marginBottom: '0px',
+          }}
+        />
+      </View>
+    );
+  }
+
+  // Sur iOS / Android : TextInput normal
+  return (
+    <TextInput
+      style={style}
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder || '••••••••'}
+      placeholderTextColor="#9CA3AF"
+      secureTextEntry={!show}
+      autoCapitalize="none"
+      autoComplete="new-password"
+      textContentType="newPassword"
+      importantForAutofill="no"
+    />
+  );
+};
+
 // ── URL BACKEND ─────────────────────────────────────────────────────────────
 const BASE_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
-// Pour vrai téléphone, remplacez par votre URL ngrok :
-// const BASE_URL = 'https://xxxx.ngrok-free.app';
 
-// ── LISTE FIXE DES SPÉCIALITÉS (plus de dépendance BDD) ─────────────────────
+// ── LISTE FIXE DES SPÉCIALITÉS ───────────────────────────────────────────────
 const SPECIALITES = [
   'Psychologue',
   'Pédopsychiatrie',
@@ -35,7 +116,7 @@ const SPECIALITES = [
   'ABA Thérapeute',
 ];
 
-// ── JOURS DE LA SEMAINE (ordre algérien : Samedi = premier jour) ─────────────
+// ── JOURS DE LA SEMAINE ──────────────────────────────────────────────────────
 const JOURS = ['Samedi', 'Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -54,16 +135,15 @@ const AVATAR_COLORS = ['#8B5CF6','#06B6D4','#F59E0B','#EC4899','#2563EB','#10B98
 const avatarColor   = (id) => AVATAR_COLORS[(id?.charCodeAt(0) || 0) % AVATAR_COLORS.length];
 
 // ── Validation téléphone algérien ────────────────────────────────────────────
-// 10 chiffres exactement, commence par 05, 06 ou 07
 function validateTel(raw) {
   if (!raw || raw.trim() === '') return 'Le téléphone est obligatoire pour un médecin.';
   const cleaned = raw.replace(/[\s\-\.]/g, '');
   if (!/^\d{10}$/.test(cleaned))  return 'Exactement 10 chiffres requis (ex: 0550001234).';
   if (!/^0[567]/.test(cleaned))   return 'Doit commencer par 05, 06 ou 07.';
-  return null; // OK
+  return null;
 }
 
-// ── Formater automatiquement le téléphone : 05 50 00 12 34 ───────────────────
+// ── Formater automatiquement le téléphone ────────────────────────────────────
 function formatTel(raw) {
   const digits = raw.replace(/\D/g, '').slice(0, 10);
   return digits.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
@@ -100,7 +180,7 @@ const Api = {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DROPDOWN SPÉCIALITÉ — liste fixe, zéro appel réseau
+// DROPDOWN SPÉCIALITÉ
 // ══════════════════════════════════════════════════════════════════════════════
 const SpecialiteDropdown = ({ value, onChange }) => {
   const [open, setOpen] = useState(false);
@@ -188,7 +268,6 @@ const SpecialiteDropdown = ({ value, onChange }) => {
 // SÉLECTEUR MULTI-JOURS DISPONIBILITÉ
 // ══════════════════════════════════════════════════════════════════════════════
 const DisponibiliteSelector = ({ value = [], onChange }) => {
-  // value : tableau de strings, ex: ['Lundi', 'Mercredi']
   const toggle = (jour) => {
     if (value.includes(jour)) {
       onChange(value.filter(j => j !== jour));
@@ -205,7 +284,6 @@ const DisponibiliteSelector = ({ value = [], onChange }) => {
 
   return (
     <View style={{ marginBottom: 12 }}>
-      {/* Label résumé */}
       <View style={{
         borderWidth: 1.5, borderColor: value.length > 0 ? '#7C3AED' : '#E5E7EB',
         borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
@@ -222,7 +300,6 @@ const DisponibiliteSelector = ({ value = [], onChange }) => {
         )}
       </View>
 
-      {/* Grille des jours */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {JOURS.map(jour => {
           const sel = value.includes(jour);
@@ -256,7 +333,7 @@ const DisponibiliteSelector = ({ value = [], onChange }) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CHAMP TÉLÉPHONE avec validation et formatage en temps réel
+// CHAMP TÉLÉPHONE
 // ══════════════════════════════════════════════════════════════════════════════
 const TelField = ({ value, onChange, required = true }) => {
   const [touched, setTouched] = useState(false);
@@ -279,7 +356,10 @@ const TelField = ({ value, onChange, required = true }) => {
           placeholder="05 XX XX XX XX"
           placeholderTextColor={COLORS.textMuted}
           keyboardType="phone-pad"
-          maxLength={14} // "05 50 00 12 34" = 14 chars avec espaces
+          maxLength={14}
+          // ✅ Empêche l'autocomplétion navigateur sur le téléphone
+          autoComplete="tel"
+          textContentType="telephoneNumber"
         />
         {isOk && (
           <View style={{ position: 'absolute', right: 12, top: 0, bottom: 16, justifyContent: 'center' }}>
@@ -443,7 +523,7 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
   const isEdit = !!editItem;
   const [form,  setForm]  = useState(FORM_EMPTY);
   const [showPwd, setShowPwd] = useState(false);
-  const scrollRef = useRef(null); // ✅ ref pour scroll vers champ actif
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -466,33 +546,31 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const submit = () => {
-    // ── Validation complète ──────────────────────────────────────────────────
     if (!form.prenom.trim()) {
-      Alert.alert('Champ manquant', 'Le prénom est obligatoire.'); return;
+      xAlert('Champ manquant', 'Le prénom est obligatoire.'); return;
     }
     if (!form.nom.trim()) {
-      Alert.alert('Champ manquant', 'Le nom est obligatoire.'); return;
+      xAlert('Champ manquant', 'Le nom est obligatoire.'); return;
     }
     if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      Alert.alert('Email invalide', "Saisissez une adresse email valide."); return;
+      xAlert('Email invalide', 'Saisissez une adresse email valide.'); return;
     }
     if (!form.specialite) {
-      Alert.alert('Champ manquant', 'Sélectionnez une spécialité.'); return;
+      xAlert('Champ manquant', 'Sélectionnez une spécialité.'); return;
     }
     const telErr = validateTel(form.telephone);
-    if (telErr) { Alert.alert('Téléphone invalide', telErr); return; }
+    if (telErr) { xAlert('Téléphone invalide', telErr); return; }
 
     if (!isEdit && form.password.length < 6) {
-      Alert.alert('Mot de passe trop court', 'Minimum 6 caractères.'); return;
+      xAlert('Mot de passe trop court', 'Minimum 6 caractères.'); return;
     }
 
-    // Construire le payload
     const payload = {
       prenom:        form.prenom.trim(),
       nom:           form.nom.trim(),
       email:         form.email.trim().toLowerCase(),
       specialite:    form.specialite,
-      telephone:     form.telephone.replace(/\s/g, ''), // envoyer sans espaces
+      telephone:     form.telephone.replace(/\s/g, ''),
       disponibilite: form.disponibilite,
     };
     if (!isEdit) payload.password = form.password;
@@ -503,7 +581,6 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      {/* ✅ FIX CLAVIER Android + iOS */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0}
@@ -534,6 +611,8 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
                   onChangeText={v => set('prenom', v)}
                   placeholder="Prénom" placeholderTextColor={COLORS.textMuted}
                   autoCapitalize="words"
+                  autoComplete="given-name"
+                  textContentType="givenName"
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -543,6 +622,8 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
                   onChangeText={v => set('nom', v)}
                   placeholder="Nom" placeholderTextColor={COLORS.textMuted}
                   autoCapitalize="words"
+                  autoComplete="family-name"
+                  textContentType="familyName"
                 />
               </View>
             </View>
@@ -554,7 +635,10 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
               onChangeText={v => set('email', v)}
               placeholder="email@exemple.dz" keyboardType="email-address"
               autoCapitalize="none" placeholderTextColor={COLORS.textMuted}
-              onFocus={e => scrollRef.current?.scrollTo({ y: 80, animated: true })}
+              // ✅ "username" indique que c'est l'email du médecin, pas de l'admin
+              autoComplete="username"
+              textContentType="username"
+              onFocus={() => scrollRef.current?.scrollTo({ y: 80, animated: true })}
             />
 
             {/* ── Téléphone ── */}
@@ -583,14 +667,13 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
               <>
                 <Text style={S.fieldLabel}>Mot de passe temporaire * (min. 6 car.)</Text>
                 <View style={{ position: 'relative' }}>
-                  <TextInput
-                    style={[S.fieldInput, { paddingRight: 48 }]}
+                  <PasswordInput
                     value={form.password}
-                    onChangeText={v => set('password', v)}
+                    onChange={v => set('password', v)}
                     placeholder="••••••••"
-                    secureTextEntry={!showPwd}
-                    placeholderTextColor={COLORS.textMuted}
-                    autoCapitalize="none"
+                    show={showPwd}
+                    medecinEmail={form.email || ''}
+                    style={[S.fieldInput, { paddingRight: 48 }]}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPwd(v => !v)}
@@ -633,7 +716,7 @@ const MedecinModal = ({ visible, onClose, onSave, editItem, loading }) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MODAL RESET MDP
+// MODAL RESET MDP — ✅ CORRECTION PRINCIPALE ICI
 // ══════════════════════════════════════════════════════════════════════════════
 const ResetPwdModal = ({ visible, onClose, onSave, medecin, loading }) => {
   const [pwd,  setPwd]  = useState('');
@@ -643,19 +726,42 @@ const ResetPwdModal = ({ visible, onClose, onSave, medecin, loading }) => {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0} style={S.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0}
+        style={S.modalOverlay}
+      >
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[S.modalSheet, { minHeight: undefined }]}>
           <View style={S.modalHandle} />
           <Text style={S.modalTitle}>🔑 Réinitialiser le MDP</Text>
           <Text style={S.modalSub}>Nouveau mot de passe pour Dr. {nomComplet}.</Text>
+
+          {/* ── Bandeau d'info médecin ── */}
+          <View style={{
+            backgroundColor: '#EDE9FE', borderRadius: 10, padding: 10,
+            marginBottom: 14, flexDirection: 'row', gap: 8, alignItems: 'center',
+          }}>
+            <Feather name="user" size={14} color="#7C3AED" />
+            <Text style={{ fontSize: 12, color: '#5B21B6', fontWeight: '600', flex: 1 }}>
+              Vous modifiez le compte de : Dr. {nomComplet}
+            </Text>
+          </View>
+
           <Text style={S.fieldLabel}>Nouveau mot de passe *</Text>
-          <View>
-            <TextInput
+          <View style={{ position: 'relative', marginBottom: 4 }}>
+            {/*
+              ✅ FIX NAVIGATEUR : PasswordInput injecte un <input html> natif sur Web
+              avec le champ email caché du MÉDECIN → Firefox/Chrome associent le MDP
+              au médecin et non à l'admin connecté. Plus de popup "Mettre à jour votre MDP".
+            */}
+            <PasswordInput
+              value={pwd}
+              onChange={setPwd}
+              placeholder="••••••••"
+              show={show}
+              medecinEmail={medecin?.email || ''}
               style={[S.fieldInput, { paddingRight: 48 }]}
-              value={pwd} onChangeText={setPwd}
-              placeholder="••••••••" secureTextEntry={!show}
-              placeholderTextColor={COLORS.textMuted} autoCapitalize="none"
             />
             <TouchableOpacity
               onPress={() => setShow(v => !v)}
@@ -664,16 +770,35 @@ const ResetPwdModal = ({ visible, onClose, onSave, medecin, loading }) => {
               <Feather name={show ? 'eye-off' : 'eye'} size={16} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
+
+          {/* ── Indication longueur ── */}
+          <Text style={{ fontSize: 11, color: pwd.length >= 6 ? '#10B981' : '#9CA3AF', marginBottom: 14 }}>
+            {pwd.length >= 6 ? '✓ Longueur suffisante' : `Minimum 6 caractères (${pwd.length}/6)`}
+          </Text>
+
+          <View style={{
+            backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10,
+            marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+          }}>
+            <Feather name="alert-triangle" size={13} color="#D97706" />
+            <Text style={{ fontSize: 12, color: '#92400E', flex: 1 }}>
+              Le médecin devra changer ce mot de passe lors de sa prochaine connexion.
+            </Text>
+          </View>
+
           <TouchableOpacity
             style={[S.submitBtn, { backgroundColor: '#7C3AED', opacity: loading ? 0.7 : 1 }]}
             onPress={() => {
-              if (pwd.length < 6) { Alert.alert('Trop court', 'Minimum 6 caractères.'); return; }
+              if (pwd.length < 6) { xAlert('Trop court', 'Minimum 6 caractères.'); return; }
               onSave(medecin._id, pwd);
             }}
             disabled={loading}
           >
-            {loading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={S.submitBtnText}>Confirmer</Text>}
+            {loading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={S.submitBtnText}>Confirmer la réinitialisation</Text>}
           </TouchableOpacity>
+
           <TouchableOpacity style={S.cancelBtn} onPress={onClose}>
             <Text style={S.cancelBtnText}>Annuler</Text>
           </TouchableOpacity>
@@ -727,24 +852,21 @@ export default function ComptesScreen({ route }) {
     setLoadingSave(true);
     try {
       if (payload._id) {
-        // Modification
         const updated = await Api.updateMedecin(payload._id, payload);
         setMedecins(prev => prev.map(m => m._id === updated._id ? { ...m, ...updated } : m));
-        Alert.alert('✅ Modifié', `Dr. ${updated.prenom} ${updated.nom} mis à jour.`);
+        xAlert('✅ Modifié', `Dr. ${updated.prenom} ${updated.nom} mis à jour.`);
       } else {
-        // Création
         const created = await Api.createMedecin(payload);
         setMedecins(prev => [created, ...prev]);
-        Alert.alert(
+        xAlert(
           '✅ Compte créé',
-          `Dr. ${created.prenom} ${created.nom} créé avec succès.\n\n` +
-          `⚠️ Le médecin doit changer son mot de passe à la première connexion.`
+          `Dr. ${created.prenom} ${created.nom} créé avec succès.\n\n⚠️ Le médecin doit changer son mot de passe à la première connexion.`
         );
       }
       setModal(false);
       setEditItem(null);
     } catch (e) {
-      Alert.alert('Erreur', e.message || 'Impossible de sauvegarder.');
+      xAlert('Erreur', e.message || 'Impossible de sauvegarder.');
     } finally {
       setLoadingSave(false);
     }
@@ -754,27 +876,32 @@ export default function ComptesScreen({ route }) {
     try {
       await Api.setMedecinStatus(id, status);
       setMedecins(prev => prev.map(m => m._id === id ? { ...m, status } : m));
-    } catch (e) { Alert.alert('Erreur', e.message); }
+    } catch (e) { xAlert('Erreur', e.message); }
   }, []);
 
   const deleteMedecin = useCallback((id) => {
-    Alert.alert('Supprimer ce médecin ?', 'Cette action est irréversible.', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+    xConfirm(
+      'Supprimer ce médecin ?',
+      'Cette action est irréversible.',
+      async () => {
         try { await Api.deleteMedecin(id); setMedecins(prev => prev.filter(m => m._id !== id)); }
-        catch (e) { Alert.alert('Erreur', e.message); }
-      }},
-    ]);
+        catch (e) { xAlert('Erreur', e.message); }
+      }
+    );
   }, []);
 
   const handleResetPwd = useCallback(async (id, newPwd) => {
     setLoadingSave(true);
     try {
       await Api.resetMedecinPassword(id, newPwd);
-      Alert.alert('✅ MDP réinitialisé', 'Le médecin devra le modifier à la prochaine connexion.');
-      setResetModal(false); setResetTarget(null);
-    } catch (e) { Alert.alert('Erreur', e.message); }
-    finally { setLoadingSave(false); }
+      xAlert('✅ MDP réinitialisé', 'Le médecin devra le modifier à la prochaine connexion.');
+      setResetModal(false);
+      setResetTarget(null);
+    } catch (e) {
+      xAlert('Erreur', e.message);
+    } finally {
+      setLoadingSave(false);
+    }
   }, []);
 
   // ── Parents ────────────────────────────────────────────────────────────────
@@ -782,17 +909,18 @@ export default function ComptesScreen({ route }) {
     try {
       await Api.setParentStatus(id, status);
       setParents(prev => prev.map(p => p._id === id ? { ...p, status } : p));
-    } catch (e) { Alert.alert('Erreur', e.message); }
+    } catch (e) { xAlert('Erreur', e.message); }
   }, []);
 
   const deleteParent = useCallback((id) => {
-    Alert.alert('Supprimer ce parent ?', 'Le compte sera supprimé définitivement.', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+    xConfirm(
+      'Supprimer ce parent ?',
+      'Le compte sera supprimé définitivement.',
+      async () => {
         try { await Api.deleteParent(id); setParents(prev => prev.filter(p => p._id !== id)); }
-        catch (e) { Alert.alert('Erreur', e.message); }
-      }},
-    ]);
+        catch (e) { xAlert('Erreur', e.message); }
+      }
+    );
   }, []);
 
   // ── Filtrage ───────────────────────────────────────────────────────────────
@@ -959,14 +1087,26 @@ export default function ComptesScreen({ route }) {
       {/* ── Modals ── */}
       <MedecinModal
         visible={modal && activeTab === 'doctor'}
-        onClose={() => { setModal(false); setEditItem(null); }}
+        onClose={() => {
+          setModal(false);
+          setEditItem(null);
+          if (search.trim() !== '') {
+            setTimeout(() => setSearch(''), 100);
+          }
+        }}
         onSave={handleSaveMedecin}
         editItem={editItem}
         loading={loadingSave}
       />
       <ResetPwdModal
         visible={resetModal}
-        onClose={() => { setResetModal(false); setResetTarget(null); }}
+        onClose={() => {
+          setResetModal(false);
+          setResetTarget(null);
+          if (search.trim() !== '') {
+            setSearch('');
+          }
+        }}
         onSave={handleResetPwd}
         medecin={resetTarget}
         loading={loadingSave}

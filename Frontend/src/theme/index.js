@@ -1,8 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  SafeKids — Design System
-//  src/theme/index.js
-//  Usage: import { COLORS, GLASS, shadow, gradients } from '../theme';
-// ─────────────────────────────────────────────────────────────────────────────
+
 import { Platform } from 'react-native';
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -28,11 +24,7 @@ export const COLORS = {
   errorLight:   '#FEE2E2',
 };
 
-// ── Glass tokens ──────────────────────────────────────────────────────────────
-// 3 variantes selon le fond sous-jacent.
-// hero  = sur gradient violet foncé
-// light = sur fond blanc / surface
-// dark  = sur fond dark (section premium)
+
 export const GLASS = {
   hero: {
     bg:      'rgba(255,255,255,0.18)',

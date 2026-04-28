@@ -22,6 +22,11 @@ import ActivitesScreen from './pages/admin/ActivitesScreen/ActivitesScreen';
 import NotificationsAdminScreen from './pages/admin/NotificationsAdminScreen/NotificationsAdminScreen';
 import ProfilAdminScreen from './pages/common/profile/AdminProfileScreen';
 import StatistiquesScreen from './pages/admin/StatistiquesScreen/StatistiquesScreen';
+import AnnuaireScreen from './pages/parents/AnnuaireMedecal/AnnuaireMedecal';
+import MedecinProfileScreen from './pages/common/profile/MedecinProfileScreen';
+import MedecinSettingsScreen from './pages/common/profile/settings/MedecinSettingsScreen';
+import MessageMedecin from './pages/medecin/Message/MedecinMessageSecreen';
+import MedecinNotification from './pages/medecin/NotificationMedecin/Medecinnotificationsscreen ';
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +55,7 @@ export default function App() {
           <Stack.Screen name='Notifications'  component={NotificationScreen}/>
           <Stack.Screen name="Children"       component={ChildrenScreen} />
           <Stack.Screen name="Messages"       component={MessagesScreen} />
+          <Stack.Screen name="Annuaire"       component={AnnuaireScreen} />
           
           <Stack.Screen name="Premium"        component={(props) => (
             <PremiumScreen {...props} onPremiumActivated={() => setIsPremium(true)} />
@@ -62,6 +68,13 @@ export default function App() {
           <Stack.Screen name="NotificationsAdmin" component={NotificationsAdminScreen} />
           <Stack.Screen name="ProfilAdmin"    component={ProfilAdminScreen} />
           <Stack.Screen name="Statistiques"   component={StatistiquesScreen} />
+
+            
+          <Stack.Screen name="MedecinProfile" component={MedecinProfileScreen} />
+          <Stack.Screen name="MedecinSettings" component={MedecinSettingsScreen} />
+          <Stack.Screen name="MessageMedecin" component={MessageMedecin} />
+          <Stack.Screen name="MedecinNotification" component={MedecinNotification} />
+          
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

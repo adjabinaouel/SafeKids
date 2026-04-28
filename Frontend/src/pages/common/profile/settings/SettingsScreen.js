@@ -452,7 +452,6 @@ const SecurityPanel = () => {
     setPwStrength(s);
   };
 
-  // ✅ Changer mot de passe via la BDD
   const handlePwChange = async () => {
     const e = {};
     if (!passwords.current)                      e.current = 'Requis';
@@ -696,46 +695,56 @@ export default function SettingsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('general');
   const tabScrollRef = useRef(null);
 
-  // ✅ Fix logout web : window.location.href sur web, navigation.reset sur mobile
+  // ✅ FIX WEB : window.confirm sur web, Alert.alert sur mobile
   const handleLogout = useCallback(() => {
-    Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Déconnexion', style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove([
-            'userToken', 'cachedAvatarUri',
-            KEYS.preferences, KEYS.notifications, KEYS.security,
-          ]);
-          if (Platform.OS === 'web') {
-            window.location.href = '/';
-          } else {
-            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
-          }
-        },
-      },
-    ]);
+    const doLogout = async () => {
+      await AsyncStorage.multiRemove([
+        'userToken', 'cachedAvatarUri',
+        KEYS.preferences, KEYS.notifications, KEYS.security,
+      ]);
+      if (Platform.OS === 'web') {
+        window.location.href = '/';
+      } else {
+        navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Voulez-vous vraiment vous déconnecter ?')) {
+        doLogout();
+      }
+    } else {
+      Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter ?', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Déconnexion', style: 'destructive', onPress: doLogout },
+      ]);
+    }
   }, [navigation]);
 
-  // ✅ Fix delete account web
+  // ✅ FIX WEB : window.confirm sur web, Alert.alert sur mobile
   const handleDeleteAccount = useCallback(() => {
-    Alert.alert('Supprimer le compte', 'Cette action est irréversible. Toutes vos données seront définitivement supprimées.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer définitivement', style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove([
-            'userToken', 'cachedAvatarUri',
-            KEYS.preferences, KEYS.notifications, KEYS.security,
-          ]);
-          if (Platform.OS === 'web') {
-            window.location.href = '/';
-          } else {
-            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
-          }
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      await AsyncStorage.multiRemove([
+        'userToken', 'cachedAvatarUri',
+        KEYS.preferences, KEYS.notifications, KEYS.security,
+      ]);
+      if (Platform.OS === 'web') {
+        window.location.href = '/';
+      } else {
+        navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Supprimer définitivement votre compte ? Cette action est irréversible. Toutes vos données seront perdues.')) {
+        doDelete();
+      }
+    } else {
+      Alert.alert('Supprimer le compte', 'Cette action est irréversible. Toutes vos données seront définitivement supprimées.', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer définitivement', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   }, [navigation]);
 
   const renderPanel = () => {

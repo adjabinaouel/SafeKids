@@ -765,4 +765,5 @@ export default StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.3,
   },
+  
 });

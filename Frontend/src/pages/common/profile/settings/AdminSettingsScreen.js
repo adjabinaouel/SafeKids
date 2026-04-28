@@ -738,21 +738,31 @@ export default function AdminSettingsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('general');
   const tabScrollRef = useRef(null);
 
-  const handleLogout = useCallback(() => {
-    Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter du panneau admin ?', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Déconnexion', style: 'destructive',
-        onPress: async () => {
-          await AsyncStorage.multiRemove(['userToken', 'adminCachedAvatarUri', KEYS.preferences, KEYS.notifications, KEYS.security, KEYS.system]);
-          if (Platform.OS === 'web') {
-            window.location.href = '/';
-          } else {
-            navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
-          }
-        },
-      },
-    ]);
+ // Dans le composant AccountPanel, remplace handleLogout par :
+
+const handleLogout = useCallback(() => {
+    const doLogout = async () => {
+      await AsyncStorage.multiRemove([
+        'userToken', 'cachedAvatarUri',
+        KEYS.preferences, KEYS.notifications, KEYS.security,
+      ]);
+      if (Platform.OS === 'web') {
+        window.location.href = '/';
+      } else {
+        navigation?.reset({ index: 0, routes: [{ name: 'Login' }] });
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Voulez-vous vraiment vous déconnecter ?')) {
+        doLogout();
+      }
+    } else {
+      Alert.alert('Se déconnecter', 'Voulez-vous vraiment vous déconnecter ?', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Déconnexion', style: 'destructive', onPress: doLogout },
+      ]);
+    }
   }, [navigation]);
 
   const renderPanel = () => {

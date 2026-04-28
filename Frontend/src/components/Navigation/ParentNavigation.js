@@ -19,7 +19,7 @@ const TABS = [
   { key: 'notifications',   icon: 'bell',label: 'Notifications'     },
   { key: 'mesEnfants',   icon: 'users',   label: 'Mes Enfantes'    },
   { key: 'profile',    icon: 'user',       label: 'Profil'      },
-  { key: 'annuaire-medecale', icon: 'map-pin', label: 'Annuaire Médical' },
+  { key: 'annuaire', icon: 'map-pin', label: 'Annuaire Médical' },
   { key: 'messages'           ,icon:'message-circle',                  label:'Messages'}
 ];
 
@@ -123,7 +123,7 @@ const ParentLayout = ({ children, activeTab }) => {
       profile:    'Profile',
       notifications: 'Notifications',
       mesEnfants: 'Children',
-      annuaireMedecale:'AnnuaireMedecale',
+      annuaire:'Annuaire',
       messages: 'Messages',
     };
     navigation.navigate(screenMap[key]);

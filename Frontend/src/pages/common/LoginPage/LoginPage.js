@@ -33,7 +33,7 @@ const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 const ROLE_SCREENS = {
   Admin:   'Dashboard',
   Parent:  'Home',
-  Medecin: 'DashboardMedecin',
+  Medecin: 'MedecinProfile',
 };
 
 export default function LoginPage({ navigation }) {

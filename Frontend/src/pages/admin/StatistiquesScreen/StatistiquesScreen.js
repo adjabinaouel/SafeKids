@@ -1,55 +1,44 @@
 // src/pages/admin/StatistiquesScreen/StatistiquesScreen.js
+// ✅ Bug fix : accolade fermante manquante ajoutée
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput,
-  Modal, StatusBar, Alert, ActivityIndicator, Animated, Dimensions,
+  View, Text, ScrollView, TouchableOpacity,
+  StatusBar, ActivityIndicator, Animated, Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop, Circle } from 'react-native-svg';
 import AdminLayout from '../../../components/Navigation/AdminNavigation';
 import { COLORS } from '../../../theme';
 import S from './StatistiquesStyles';
 
 const { width } = Dimensions.get('window');
-const API_BASE = 'http://YOUR_BACKEND_URL/api';
+const BASE_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
 
 const SPEC_COLORS = ['#8B5CF6','#06B6D4','#10B981','#F59E0B','#EC4899','#2563EB','#F97316'];
 
-// ── Fetch helpers ──────────────────────────────────────────────────────────────
-async function fetchStats() {
-  try {
-    const res = await fetch(`${API_BASE}/stats/overview`);
-    if (res.ok) return await res.json();
-  } catch {}
-  return null;
-}
-async function fetchSpecialites() {
-  try {
-    const res = await fetch(`${API_BASE}/specialites`);
-    if (res.ok) return await res.json();
-  } catch {}
-  return [];
-}
-async function createSpecialite(nom) {
-  const res = await fetch(`${API_BASE}/specialites`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nom }),
+// ── Fetch authentifié ────────────────────────────────────────────────────────
+async function apiFetch(path) {
+  const token = await AsyncStorage.getItem('userToken');
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'ngrok-skip-browser-warning': 'true',
+    },
   });
   if (res.ok) return await res.json();
-  throw new Error('Erreur création');
-}
-async function deleteSpecialite(id) {
-  const res = await fetch(`${API_BASE}/specialites/${id}`, { method: 'DELETE' });
-  return res.ok;
+  return null;
 }
 
 // ── AnimatedBar ───────────────────────────────────────────────────────────────
 const AnimatedBar = ({ pct, color, delay = 0 }) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.spring(anim, { toValue: 1, tension: 60, friction: 10, delay, useNativeDriver: false }).start();
+    Animated.spring(anim, {
+      toValue: 1, tension: 60, friction: 10, delay, useNativeDriver: false,
+    }).start();
   }, [pct]);
   return (
     <View style={{ height: 8, backgroundColor: color + '22', borderRadius: 4, overflow: 'hidden' }}>
@@ -124,7 +113,10 @@ const BarChart = ({ newData = [], oldData = [], labels = [] }) => {
 
   return (
     <View style={S.chartWrap}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: barH, paddingHorizontal: 4 }}>
+      <View style={{
+        flexDirection: 'row', justifyContent: 'space-between',
+        alignItems: 'flex-end', height: barH, paddingHorizontal: 4,
+      }}>
         {labels.map((m, i) => (
           <View key={m} style={{ alignItems: 'center', flex: 1, gap: 3 }}>
             <Animated.View style={{
@@ -169,81 +161,77 @@ const KpiCard = ({ icon, value, label, badgeText, badgeColor, badgeBg, color }) 
 
 // ─── ÉCRAN PRINCIPAL ──────────────────────────────────────────────────────────
 export default function StatistiquesScreen() {
-  const [stats,     setStats]     = useState(null);
-  const [specs,     setSpecs]     = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [addModal,  setAddModal]  = useState(false);
-  const [newSpec,   setNewSpec]   = useState('');
-  const [savingSpec,setSavingSpec]= useState(false);
+  const [stats,   setStats]   = useState(null);
+  const [specs,   setSpecs]   = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [s, sp] = await Promise.all([fetchStats(), fetchSpecialites()]);
+    const [s, sp] = await Promise.all([
+      apiFetch('/api/stats/overview'),
+      apiFetch('/api/specialites'),
+    ]);
     setStats(s);
-    setSpecs(sp);
+    setSpecs(Array.isArray(sp) ? sp : []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, []);
 
-  const handleAddSpec = async () => {
-    if (!newSpec.trim()) return;
-    setSavingSpec(true);
-    try {
-      const created = await createSpecialite(newSpec.trim());
-      setSpecs(p => [...p, { ...created, color: SPEC_COLORS[p.length % SPEC_COLORS.length] }]);
-      setNewSpec('');
-      setAddModal(false);
-    } catch {
-      Alert.alert('Erreur', 'Impossible de créer la spécialité.');
-    } finally { setSavingSpec(false); }
-  };
-
-  const handleDelSpec = (id) =>
-    Alert.alert('Supprimer ?', 'Supprimer cette spécialité ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: async () => {
-        await deleteSpecialite(id);
-        setSpecs(p => p.filter(s => s._id !== id));
-      }},
-    ]);
-
   // ── Stats dérivées ──────────────────────────────────────────────────────────
-  const totalEnfants    = stats?.totalEnfants    ?? null;
-  const totalConsults   = stats?.totalConsults   ?? null;
-  const nouveauxCas     = stats?.nouveauxCasMois ?? null;
-  const anciensCas      = stats?.anciensCas      ?? null;
-  const tauxSucces      = stats?.tauxSuccesMoyen ?? null;
-  const engagement      = stats?.engagementMoyen ?? null;
-  const garcons         = stats?.garcons         ?? null;
-  const filles          = stats?.filles          ?? null;
-  const garconsPct      = (garcons && totalEnfants) ? Math.round((garcons / totalEnfants) * 100) : 52;
-  const fillesPct       = 100 - garconsPct;
-  const domainesStats   = stats?.domaines        ?? [];
-  const evolutionData   = stats?.evolution       ?? [];
-  const barNew          = stats?.barNouveaux      ?? [];
-  const barOld          = stats?.barAnciens       ?? [];
-  const barLabels       = stats?.barLabels        ?? [];
+  const totalEnfants  = stats?.totalEnfants    ?? null;
+  const totalConsults = stats?.totalConsults   ?? null;
+  const nouveauxCas   = stats?.nouveauxCasMois ?? null;
+  const anciensCas    = stats?.anciensCas      ?? null;
+  const tauxSucces    = stats?.tauxSuccesMoyen ?? null;
+  const engagement    = stats?.engagementMoyen ?? null;
+  const garcons       = stats?.garcons         ?? null;
+  const filles        = stats?.filles          ?? null;
+  const garconsPct    = (garcons && totalEnfants) ? Math.round((garcons / totalEnfants) * 100) : 52;
+  const fillesPct     = 100 - garconsPct;
+  const domainesStats = stats?.domaines        ?? [];
+  const evolutionData = stats?.evolution       ?? [];
+  const barNew        = stats?.barNouveaux     ?? [];
+  const barOld        = stats?.barAnciens      ?? [];
+  const barLabels     = stats?.barLabels       ?? [];
 
   return (
     <AdminLayout activeTab="statistiques">
       <StatusBar barStyle="light-content" />
-      <ScrollView style={S.container} showsVerticalScrollIndicator={false}
-        contentContainerStyle={S.scrollContent}>
-
+      <ScrollView
+        style={S.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={S.scrollContent}
+      >
         {/* ── Header ────────────────────────────────────────────────────── */}
-        <LinearGradient colors={['#4C1D95', '#1E1B4B']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={S.header}>
-          <View style={{ position: 'absolute', left: -60, top: -20, width: 200, height: 200, borderRadius: 100, backgroundColor: '#6D28D9', opacity: 0.35 }} />
-          <View style={{ position: 'absolute', right: -40, bottom: -30, width: 160, height: 160, borderRadius: 80, backgroundColor: '#3B82F6', opacity: 0.18 }} />
+        <LinearGradient
+          colors={['#4C1D95', '#1E1B4B']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={S.header}
+        >
+          <View style={{
+            position: 'absolute', left: -60, top: -20,
+            width: 200, height: 200, borderRadius: 100,
+            backgroundColor: '#6D28D9', opacity: 0.35,
+          }} />
+          <View style={{
+            position: 'absolute', right: -40, bottom: -30,
+            width: 160, height: 160, borderRadius: 80,
+            backgroundColor: '#3B82F6', opacity: 0.18,
+          }} />
           <Text style={S.headerGreeting}>Tableau analytique</Text>
           <Text style={S.headerTitle}>
             Statis<Text style={S.headerAccent}>tiques</Text>
           </Text>
-          {/* Refresh button */}
           <TouchableOpacity
             onPress={load}
-            style={{ position: 'absolute', top: 16, right: 16, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 8 }}>
+            style={{
+              position: 'absolute', top: 16, right: 16,
+              backgroundColor: 'rgba(255,255,255,0.15)',
+              borderRadius: 10, padding: 8,
+            }}
+          >
             <Feather name="refresh-cw" size={16} color="#fff" />
           </TouchableOpacity>
         </LinearGradient>
@@ -251,31 +239,27 @@ export default function StatistiquesScreen() {
         {loading ? (
           <View style={{ flex: 1, alignItems: 'center', paddingVertical: 60 }}>
             <ActivityIndicator size="large" color={COLORS.primary || '#7C3AED'} />
-            <Text style={{ marginTop: 12, color: '#9CA3AF', fontSize: 13 }}>Chargement des données…</Text>
+            <Text style={{ marginTop: 12, color: '#9CA3AF', fontSize: 13 }}>
+              Chargement des données…
+            </Text>
           </View>
         ) : (
           <>
-            {/* ── KPIs row 1 ──────────────────────────────────────────────── */}
+            {/* ── KPIs row 1 ── */}
             <View style={S.kpiRow}>
               <KpiCard
                 icon="📊"
                 value={tauxSucces !== null ? `${tauxSucces}%` : '—'}
                 label="Taux de succès moyen"
                 color={COLORS.primary || '#7C3AED'}
-                badgeText={stats?.tauxSuccesDelta ? `${stats.tauxSuccesDelta > 0 ? '+' : ''}${stats.tauxSuccesDelta}% ce mois` : null}
-                badgeBg="#D1FAE5" badgeColor="#065F46"
               />
               <KpiCard
                 icon="⭐"
                 value={engagement !== null ? engagement.toFixed(1) : '—'}
                 label="Engagement moyen"
                 color="#F59E0B"
-                badgeText={stats?.engagementDelta ? `+${stats.engagementDelta} pts` : null}
-                badgeBg="#FEF3C7" badgeColor="#92400E"
               />
             </View>
-
-            {/* ── KPIs row 2 ──────────────────────────────────────────────── */}
             <View style={S.kpiRow}>
               <KpiCard
                 icon="👶"
@@ -290,8 +274,6 @@ export default function StatistiquesScreen() {
                 color="#2563EB"
               />
             </View>
-
-            {/* ── KPIs row 3 ──────────────────────────────────────────────── */}
             <View style={S.kpiRow}>
               <KpiCard
                 icon="📈"
@@ -299,7 +281,8 @@ export default function StatistiquesScreen() {
                 label="Nouveaux cas (mois)"
                 color="#10B981"
                 badgeText={stats?.nouveauxPct ? `+${stats.nouveauxPct}%` : null}
-                badgeBg="#D1FAE5" badgeColor="#065F46"
+                badgeBg="#D1FAE5"
+                badgeColor="#065F46"
               />
               <KpiCard
                 icon="🗂️"
@@ -309,8 +292,9 @@ export default function StatistiquesScreen() {
               />
             </View>
 
-            {/* ── Domaines ────────────────────────────────────────────────── */}
             <View style={[S.section, { marginTop: 6 }]}>
+
+              {/* ── Domaines ── */}
               {domainesStats.length > 0 && (
                 <View style={S.chartCard}>
                   <Text style={S.chartTitle}>Répartition des succès par domaine</Text>
@@ -318,20 +302,21 @@ export default function StatistiquesScreen() {
                     <View key={i} style={S.barRow}>
                       <Text style={S.barLabel}>{d.nom}</Text>
                       <View style={S.barTrack}>
-                        <AnimatedBar pct={d.pct} color={SPEC_COLORS[i % SPEC_COLORS.length]} delay={i * 80} />
+                        <AnimatedBar
+                          pct={d.pct}
+                          color={SPEC_COLORS[i % SPEC_COLORS.length]}
+                          delay={i * 80}
+                        />
                       </View>
-                      <Text style={[S.barPct, { color: SPEC_COLORS[i % SPEC_COLORS.length] }]}>{d.pct}%</Text>
+                      <Text style={[S.barPct, { color: SPEC_COLORS[i % SPEC_COLORS.length] }]}>
+                        {d.pct}%
+                      </Text>
                     </View>
                   ))}
-                  {domainesStats.length === 0 && (
-                    <Text style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>
-                      Aucune donnée par domaine
-                    </Text>
-                  )}
                 </View>
               )}
 
-              {/* ── Genre ──────────────────────────────────────────────────── */}
+              {/* ── Genre ── */}
               <View style={S.chartCard}>
                 <Text style={S.chartTitle}>Répartition par genre</Text>
                 {totalEnfants ? (
@@ -339,7 +324,7 @@ export default function StatistiquesScreen() {
                     <View style={S.barRow}>
                       <Text style={S.barLabel}>Garçons ({garconsPct}%)</Text>
                       <View style={S.barTrack}>
-                        <AnimatedBar pct={garconsPct} color="#2563EB" delay={0} />
+                        <AnimatedBar pct={garconsPct} color="#2563EB" />
                       </View>
                       <Text style={[S.barPct, { color: '#2563EB' }]}>{garcons ?? '—'}</Text>
                     </View>
@@ -358,10 +343,13 @@ export default function StatistiquesScreen() {
                 )}
               </View>
 
-              {/* ── Nouveaux vs Anciens ─────────────────────────────────────── */}
+              {/* ── Nouveaux vs Anciens ── */}
               {barLabels.length > 0 && (
                 <View style={S.chartCard}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <View style={{
+                    flexDirection: 'row', justifyContent: 'space-between',
+                    alignItems: 'center', marginBottom: 12,
+                  }}>
                     <Text style={S.chartTitle}>Nouveaux vs Anciens cas</Text>
                     <View style={{ flexDirection: 'row', gap: 10 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -378,85 +366,56 @@ export default function StatistiquesScreen() {
                 </View>
               )}
 
-              {/* ── Évolution ──────────────────────────────────────────────── */}
+              {/* ── Évolution ── */}
               {evolutionData.length > 0 && (
                 <View style={S.chartCard}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <Text style={S.chartTitle}>Évolution des nouveaux cas</Text>
-                    {stats?.evolutionDelta && (
-                      <View style={{ backgroundColor: '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Feather name="trending-up" size={11} color="#059669" />
-                        <Text style={{ fontSize: 11, color: '#059669', fontWeight: '600' }}>{stats.evolutionDelta}</Text>
-                      </View>
-                    )}
-                  </View>
+                  <Text style={S.chartTitle}>Évolution des nouveaux cas</Text>
                   <LineChart data={evolutionData} />
                 </View>
               )}
 
-              {/* ── Spécialités ─────────────────────────────────────────────── */}
-              <View style={S.sectionRow}>
-                <Text style={S.sectionTitle}>Spécialités ({specs.length})</Text>
-                <TouchableOpacity style={S.addSpecBtn} onPress={() => setAddModal(true)}>
-                  <Feather name="plus" size={14} color={COLORS.primary || '#7C3AED'} />
-                  <Text style={S.addSpecBtnText}>Ajouter</Text>
-                </TouchableOpacity>
+              {/* ── Spécialités ── */}
+              <View style={S.chartCard}>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  justifyContent: 'space-between', marginBottom: 14,
+                }}>
+                  <Text style={S.chartTitle}>Spécialités ({specs.length})</Text>
+                  <View style={{
+                    backgroundColor: '#EDE9FE', borderRadius: 8,
+                    paddingHorizontal: 8, paddingVertical: 4,
+                  }}>
+                    <Text style={{ fontSize: 10, color: '#7C3AED', fontWeight: '700' }}>
+                      Gérer → Dashboard
+                    </Text>
+                  </View>
+                </View>
+                {specs.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+                    <Feather name="layers" size={22} color="#D1D5DB" />
+                    <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 8 }}>
+                      Aucune spécialité enregistrée
+                    </Text>
+                  </View>
+                ) : (
+                  specs.map((spec, i) => (
+                    <View key={spec._id} style={S.specItem}>
+                      <View style={[S.specDot, { backgroundColor: SPEC_COLORS[i % SPEC_COLORS.length] }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={S.specName}>{spec.nom}</Text>
+                        <Text style={S.specCount}>
+                          {spec.medecins ?? 0} médecin{(spec.medecins ?? 0) !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
               </View>
 
-              {specs.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 20, backgroundColor: '#F9FAFB', borderRadius: 14, marginTop: 8 }}>
-                  <Feather name="layers" size={24} color="#D1D5DB" />
-                  <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 8 }}>Aucune spécialité enregistrée</Text>
-                </View>
-              ) : (
-                specs.map(spec => (
-                  <View key={spec._id} style={S.specItem}>
-                    <View style={[S.specDot, { backgroundColor: spec.color || SPEC_COLORS[0] }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={S.specName}>{spec.nom}</Text>
-                      <Text style={S.specCount}>{spec.medecins ?? 0} médecin{(spec.medecins ?? 0) !== 1 ? 's' : ''}</Text>
-                    </View>
-                    <TouchableOpacity style={S.specDelBtn} onPress={() => handleDelSpec(spec._id)}>
-                      <Feather name="trash-2" size={14} color="#991B1B" />
-                    </TouchableOpacity>
-                  </View>
-                ))
-              )}
             </View>
           </>
         )}
       </ScrollView>
-
-      {/* ── Modal ajout spécialité ──────────────────────────────────────────── */}
-      <Modal visible={addModal} transparent animationType="slide" onRequestClose={() => setAddModal(false)}>
-        <View style={S.modalOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setAddModal(false)} />
-          <View style={S.modalSheet}>
-            <View style={S.modalHandle} />
-            <Text style={S.modalTitle}>➕ Nouvelle spécialité</Text>
-            <Text style={S.fieldLabel}>Nom de la spécialité *</Text>
-            <TextInput
-              style={S.fieldInput}
-              value={newSpec}
-              onChangeText={setNewSpec}
-              placeholder="Ex: Neurologie pédiatrique"
-              placeholderTextColor={COLORS.textMuted}
-              autoFocus
-            />
-            <LinearGradient colors={['#4C1D95', '#6D28D9']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={S.submitBtn}>
-              <TouchableOpacity
-                style={{ paddingVertical: 16, alignItems: 'center', width: '100%' }}
-                onPress={handleAddSpec}
-                disabled={savingSpec}>
-                {savingSpec
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={S.submitBtnText}>Ajouter la spécialité</Text>}
-              </TouchableOpacity>
-            </LinearGradient>
-          </View>
-        </View>
-      </Modal>
     </AdminLayout>
   );
 }
