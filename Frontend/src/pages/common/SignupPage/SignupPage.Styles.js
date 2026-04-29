@@ -240,11 +240,11 @@ export default StyleSheet.create({
       android: { marginLeft: -4 },
       web: {
         border: 'none',
-        background: 'transparent',
+        backgroundColor: 'transparent',
         fontSize: 14,
         fontWeight: '500',
         color: '#1A1035',
-        outline: 'none',
+        outlineStyle: 'none',
       },
     }),
   },

@@ -12,7 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import ParentLayout from '../../../components/Navigation/ParentNavigation';
 import S, { COLORS } from './ProfileStyles';
 
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+const SERVER_URL = 'https://gondola-reattach-relearn.ngrok-free.dev';
 
 // ── Composant avatar multi-plateforme ─────────────────────────────────────────
 // Sur web, react-native-web Image bloque les URLs ngrok (CORS).

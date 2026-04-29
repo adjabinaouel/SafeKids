@@ -32,7 +32,7 @@ const NB_ENFANTS_OPTIONS = [
 ];
 
 // ✅ URL ngrok — change cette ligne à chaque fois que tu relances ngrok
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+const SERVER_URL = 'https://gondola-reattach-relearn.ngrok-free.dev';
 
 export default function SignupPage({ navigation }) {
   const [prenom, setPrenom]                   = useState('');

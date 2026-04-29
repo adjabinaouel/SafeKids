@@ -12,7 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import AdminLayout from '../../../components/Navigation/AdminNavigation';
 import S, { COLORS } from './ProfileStyles';
 
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+const SERVER_URL = 'https://gondola-reattach-relearn.ngrok-free.dev';
 
 const PERMISSIONS = [
   { label: 'Gestion des comptes',     granted: true  },

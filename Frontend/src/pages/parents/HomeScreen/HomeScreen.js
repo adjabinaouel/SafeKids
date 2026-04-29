@@ -15,7 +15,7 @@ import GlassPill   from '../../../components/UI/GlassPill';
 import GlassButton from '../../../components/UI/GlassButton';
 import { COLORS, GLASS, gradients, shadow } from '../../../theme';
 
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+const SERVER_URL = 'https://gondola-reattach-relearn.ngrok-free.dev';
 const { width } = Dimensions.get('window');
 
 // ── Guide steps ───────────────────────────────────────────────────────────────
@@ -203,6 +203,12 @@ export default function HomeScreen({ navigation }) {
         },
       });
 
+      if (response.status === 401) {
+        await AsyncStorage.removeItem('userToken');
+        navigation.navigate('Login');
+        return;
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -333,6 +339,9 @@ export default function HomeScreen({ navigation }) {
               <TouchableOpacity
                 onPress={() => navigation?.navigate('Profile')}
                 activeOpacity={0.82}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Ouvrir le profil"
                 style={{
                   width: 56, height: 56, borderRadius: 28,
                   backgroundColor: GLASS.hero.bg,

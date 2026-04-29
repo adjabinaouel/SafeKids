@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../../../hooks/useAuth';
 import styles from './LoginPage.Styles.js';
 
 const COLORS = {
@@ -26,17 +26,8 @@ const ROLES = [
   { id: 'Medecin', label: 'MÉDECIN', icon: 'medkit'  },
 ];
 
-// ✅ URL ngrok — change cette ligne à chaque fois que tu relances ngrok
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
-
-// ✅ MAP des écrans selon le rôle — adapte si tes écrans ont des noms différents
-const ROLE_SCREENS = {
-  Admin:   'Dashboard',
-  Parent:  'Home',
-  Medecin: 'DashboardMedecin',
-};
-
 export default function LoginPage({ navigation }) {
+  const { signIn } = useAuth();
   const [email,      setEmail]      = useState('');
   const [password,   setPassword]   = useState('');
   const [role,       setRole]       = useState('Parent');
@@ -57,58 +48,30 @@ export default function LoginPage({ navigation }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${SERVER_URL}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: JSON.stringify({
-          email:      email.trim().toLowerCase(),
-          motDePasse: password,
-          role,
-        }),
-      });
+      // ✅ Utiliser la méthode signIn du contexte d'authentification
+      const result = await signIn(email, password, role.toLowerCase());
 
-      // ✅ FIX : on vérifie si la réponse est bien du JSON avant de parser
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Réponse non-JSON:', text);
-        setErrorMsg('Erreur serveur. Vérifiez que ngrok est lancé et accessible.');
+      if (!result.success) {
+        setErrorMsg(result.error || 'Connexion échouée. Vérifiez vos identifiants.');
         return;
       }
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setErrorMsg(data.message || 'Connexion échouée. Vérifiez vos identifiants.');
-        return;
+      // ✅ Navigation vers l'écran approprié selon le rôle
+      // Note: La session est gérée par AuthProvider, mais on doit naviguer
+      switch (role.toLowerCase()) {
+        case 'admin':
+          navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
+          break;
+        case 'medecin':
+          navigation.reset({ index: 0, routes: [{ name: 'DashboardMedecin' }] });
+          break;
+        case 'parent':
+        default:
+          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+          break;
       }
-
-      // ✅ Sauvegarde token + données
-      await AsyncStorage.setItem('userToken', data.token);
-      await AsyncStorage.setItem('userRole',  data.user.role);
-      await AsyncStorage.setItem('userData',  JSON.stringify(data.user));
-
-      // ✅ Redirection via la map — évite les fautes de frappe sur les noms d'écrans
-      const userRole   = data.user.role;
-      const screenName = ROLE_SCREENS[userRole];
-
-      if (!screenName) {
-        setErrorMsg(`Rôle inconnu : "${userRole}". Contactez un administrateur.`);
-        return;
-      }
-
-      // ✅ FIX crash Admin : on vérifie que l'écran existe dans le navigator
-      //    Si tu as une erreur "no screen named Dashboard", change la valeur dans ROLE_SCREENS
-      navigation.reset({
-        index: 0,
-        routes: [{ name: screenName }],
-      });
 
     } catch (error) {
-      // ✅ FIX : message d'erreur plus précis pour débugger
       console.error('Login error:', error);
       if (error.message?.includes('Network request failed')) {
         setErrorMsg('Impossible de joindre le serveur. Vérifiez que ngrok est lancé.');

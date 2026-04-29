@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const JWT_SECRET = 'safekids_jwt_secret_2026_changez_moi_en_production';
@@ -64,6 +66,27 @@ function validateTelephone(tel) {
   return { valid: true, cleaned };
 }
 
+function isValidEmail(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+const mailTransporter = smtpConfigured
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT, 10) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    })
+  : null;
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:19006';
+
+if (!smtpConfigured) {
+  console.warn('⚠️ SMTP non configuré. Les emails seront simulés sur le serveur.');
+}
 
 const SPECIALITES_LISTE = [
   'Psychologue',
@@ -240,6 +263,49 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// ====================== LOGOUT ======================
+app.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    
+    // Enregistre la déconnexion (optionnel - utile pour les logs)
+    await db.collection('sessions_log').insertOne({
+      userId: req.user.userId,
+      email: req.user.email,
+      role: req.user.role,
+      action: 'logout',
+      timestamp: new Date(),
+      ip: req.ip,
+    });
+
+    res.json({ success: true, message: 'Déconnecté avec succès' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ message: 'Erreur lors de la déconnexion' });
+  }
+});
+
+// ====================== REFRESH TOKEN ======================
+app.post('/refresh-token', authenticateToken, async (req, res) => {
+  try {
+    // Crée un nouveau token avec la même structure
+    const newToken = jwt.sign(
+      { userId: req.user.userId, email: req.user.email, role: req.user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token: newToken,
+      message: 'Token renouvelé avec succès'
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ message: 'Erreur lors du renouvellement du token' });
+  }
+});
+
 app.post('/setup-admin', async (req, res) => {
   try {
     const { email, motDePasse, nom, prenom } = req.body;
@@ -289,20 +355,32 @@ app.get('/profile', authenticateToken, async (req, res) => {
 
 app.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { prenom, nom, telephone, ville, wilaya, disponibilite } = req.body;
+    const { prenom, nom, email, telephone, ville, wilaya, disponibilite, specialite } = req.body;
 
     if (telephone !== undefined && telephone !== '') {
       const telCheck = validateTelephone(telephone);
       if (!telCheck.valid) return res.status(400).json({ message: telCheck.message });
     }
 
+    if (email !== undefined && email !== '') {
+      if (!isValidEmail(email)) return res.status(400).json({ message: 'Format email invalide' });
+      // Vérifier unicité email
+      const existing = await mongoose.connection.db.collection('utilisateurs').findOne({
+        email: email.trim().toLowerCase(),
+        _id: { $ne: toObjectId(req.user.userId) }
+      });
+      if (existing) return res.status(400).json({ message: 'Cet email est déjà utilisé' });
+    }
+
     const updateFields = {};
     if (prenom        !== undefined) updateFields.prenom        = prenom.trim();
     if (nom           !== undefined) updateFields.nom           = nom.trim();
+    if (email         !== undefined) updateFields.email         = email.trim().toLowerCase();
     if (telephone     !== undefined) updateFields.telephone     = telephone.replace(/[\s\-\.]/g, '').trim();
     if (ville         !== undefined) updateFields.ville         = ville.trim();
     if (wilaya        !== undefined) updateFields.wilaya        = wilaya.trim();
     if (disponibilite !== undefined) updateFields.disponibilite = disponibilite; // tableau ou string
+    if (specialite    !== undefined) updateFields.specialite    = specialite.trim();
 
     if (Object.keys(updateFields).length === 0) {
       return res.status(400).json({ message: 'Aucun champ à mettre à jour' });
@@ -866,6 +944,250 @@ app.get('/api/enfants', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/enfants — créer un enfant (médecin ou parent)
+app.post('/api/enfants', authenticateToken, async (req, res) => {
+  try {
+    const { prenom, nom, age, genre, niveau_tsa, cognitif, age_du_langage_expressif, age_du_langage_receptif, 
+            motricite_manuelle, motricite_globale, imitation, comportements_problemes, autonomie_personnelle, 
+            niveau_structuration_visuelle, developpement_sensoriel, distingue_parties_corps, 
+            notion_de_la_temporalite, notion_de_la_spatialite } = req.body;
+
+    // Validation des champs obligatoires
+    if (!prenom?.trim() || !nom?.trim() || !age || !genre?.trim() || !niveau_tsa?.trim()) {
+      return res.status(400).json({ message: 'Champs obligatoires manquants : prénom, nom, âge, genre, niveau TSA' });
+    }
+
+    // ✅ NOUVEAU: Récupérer l'ID de l'utilisateur actuel et son rôle
+    const userId = req.user.userId; // Défini par authenticateToken
+    const db = mongoose.connection.db;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Utilisateur non trouvé' });
+    }
+
+    // Déterminer l'idParent en fonction du rôle
+    let idParent = null;
+    if (user.role === 'Parent') {
+      idParent = userId; // Le parent crée pour ses propres enfants
+    } else if (user.role === 'Medecin' && req.body.idParent) {
+      // Si le médecin spécifie l'ID du parent
+      idParent = req.body.idParent;
+    }
+
+    const result = await db.collection('enfants').insertOne({
+      prenom:                       prenom.trim(),
+      nom:                          nom.trim(),
+      age:                          parseInt(age),
+      genre:                        genre.trim(),
+      niveau_tsa:                   niveau_tsa.trim(),
+      cognitif:                     cognitif?.trim() || '',
+      age_du_langage_expressif:     parseInt(age_du_langage_expressif) || 0,
+      age_du_langage_receptif:      parseInt(age_du_langage_receptif) || 0,
+      motricite_manuelle:           motricite_manuelle?.trim() || '',
+      motricite_globale:            motricite_globale?.trim() || '',
+      imitation:                    imitation?.trim() || '',
+      comportements_problemes:      comportements_problemes?.trim() || '',
+      autonomie_personnelle:        autonomie_personnelle?.trim() || '',
+      niveau_structuration_visuelle: niveau_structuration_visuelle?.trim() || '',
+      developpement_sensoriel:      developpement_sensoriel?.trim() || '',
+      distingue_parties_corps:      distingue_parties_corps?.trim() || '',
+      notion_de_la_temporalite:     notion_de_la_temporalite?.trim() || '',
+      notion_de_la_spatialite:      notion_de_la_spatialite?.trim() || '',
+      idParent:                     idParent,
+      idMedecin:                    user.role === 'Medecin' ? userId : null,
+      dateCreation:                 new Date(),
+    });
+
+    res.status(201).json({
+      _id:                          result.insertedId.toString(),
+      prenom:                       prenom.trim(),
+      nom:                          nom.trim(),
+      age:                          parseInt(age),
+      genre:                        genre.trim(),
+      niveau_tsa:                   niveau_tsa.trim(),
+      cognitif:                     cognitif?.trim() || '',
+      age_du_langage_expressif:     parseInt(age_du_langage_expressif) || 0,
+      age_du_langage_receptif:      parseInt(age_du_langage_receptif) || 0,
+      motricite_manuelle:           motricite_manuelle?.trim() || '',
+      motricite_globale:            motricite_globale?.trim() || '',
+      imitation:                    imitation?.trim() || '',
+      comportements_problemes:      comportements_problemes?.trim() || '',
+      autonomie_personnelle:        autonomie_personnelle?.trim() || '',
+      niveau_structuration_visuelle: niveau_structuration_visuelle?.trim() || '',
+      developpement_sensoriel:      developpement_sensoriel?.trim() || '',
+      distingue_parties_corps:      distingue_parties_corps?.trim() || '',
+      notion_de_la_temporalite:     notion_de_la_temporalite?.trim() || '',
+      notion_de_la_spatialite:      notion_de_la_spatialite?.trim() || '',
+      idParent:                     idParent,
+      idMedecin:                    user.role === 'Medecin' ? userId : null,
+      message:                      'Enfant créé avec succès'
+    });
+  } catch (error) {
+    console.error('Create enfant error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
+// GET /api/enfants/:id — voir un enfant spécifique
+app.get('/api/enfants/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = toObjectId(req.params.id);
+    if (!id) return res.status(400).json({ message: 'ID invalide' });
+
+    const db = mongoose.connection.db;
+    const enfant = await db.collection('enfants').findOne({ _id: id });
+    
+    if (!enfant) return res.status(404).json({ message: 'Enfant non trouvé' });
+
+    // ✅ Vérifications d'accès :
+    // - Admin peut voir tous
+    // - Parent ne peut voir que ses propres enfants
+    // - Médecin peut voir ses patients
+    const userId = req.user.userId;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+
+    if (user.role === 'Parent' && enfant.idParent?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+    if (user.role === 'Medecin' && enfant.idMedecin?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+
+    res.json(cleanDoc(enfant));
+  } catch (error) {
+    console.error('Get enfant error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
+// POST /api/enfants/:id/invite-parent — inviter le parent d'un enfant créé par le médecin
+app.post('/api/enfants/:id/invite-parent', authenticateToken, async (req, res) => {
+  try {
+    const { parentEmail } = req.body;
+    if (!parentEmail || !isValidEmail(parentEmail)) {
+      return res.status(400).json({ message: 'Adresse email parent invalide.' });
+    }
+
+    const id = toObjectId(req.params.id);
+    if (!id) return res.status(400).json({ message: 'ID enfant invalide.' });
+
+    const db = mongoose.connection.db;
+    const enfant = await db.collection('enfants').findOne({ _id: id });
+    if (!enfant) return res.status(404).json({ message: 'Enfant introuvable.' });
+
+    const userId = req.user.userId;
+    if (req.user.role !== 'Medecin' || enfant.idMedecin?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé pour inviter ce parent.' });
+    }
+
+    const medecin = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+    const signupLink = `${frontendUrl}/Signup`;
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || 'no-reply@safekids.app',
+      to: parentEmail.trim().toLowerCase(),
+      subject: 'Invitation SafeKids - Inscription parent',
+      html: `<p>Bonjour,</p>
+             <p>Le médecin <strong>${medecin?.prenom || 'Votre médecin'} ${medecin?.nom || ''}</strong> a inscrit l'enfant <strong>${enfant.prenom} ${enfant.nom}</strong> dans SafeKids.</p>
+             <p>Vous pouvez créer votre compte parent et accéder au suivi de votre enfant en cliquant sur le lien ci-dessous :</p>
+             <p><a href="${signupLink}">${signupLink}</a></p>
+             <p>Après l'inscription, utilisez vos identifiants pour vous connecter.</p>
+             <p>Si vous n'avez pas demandé cette invitation, ignorez ce message.</p>
+             <p>Cordialement,<br/>L'équipe SafeKids</p>`,
+    };
+
+    if (!smtpConfigured) {
+      console.warn('SMTP non configuré. Email simulé :', mailOptions);
+      return res.json({ message: 'Invitation prête. SMTP non configuré, l’email est simulé côté serveur.' });
+    }
+
+    try { await mailTransporter.sendMail(mailOptions); res.json({ message: "Invitation envoy�e au parent." }); } catch (smtpError) { console.error("SMTP Error:", smtpError.message); res.status(500).json({ message: "Erreur SMTP: " + smtpError.message }); }
+
+  } catch (error) {
+    console.error('Invite parent error:', error);
+    res.status(500).json({ message: 'Erreur lors de l’envoi de l’invitation.' });
+  }
+});
+
+// PUT /api/enfants/:id — modifier un enfant
+app.put('/api/enfants/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = toObjectId(req.params.id);
+    if (!id) return res.status(400).json({ message: 'ID invalide' });
+
+    const db = mongoose.connection.db;
+    const enfant = await db.collection('enfants').findOne({ _id: id });
+    if (!enfant) return res.status(404).json({ message: 'Enfant non trouvé' });
+
+    // ✅ Vérification d'accès
+    const userId = req.user.userId;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+
+    if (user.role === 'Parent' && enfant.idParent?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+    if (user.role === 'Medecin' && enfant.idMedecin?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+
+    const updateFields = {};
+    const allowedFields = ['prenom', 'nom', 'age', 'genre', 'niveau_tsa', 'cognitif', 'age_du_langage_expressif',
+                          'age_du_langage_receptif', 'motricite_manuelle', 'motricite_globale', 'imitation',
+                          'comportements_problemes', 'autonomie_personnelle', 'niveau_structuration_visuelle',
+                          'developpement_sensoriel', 'distingue_parties_corps', 'notion_de_la_temporalite', 'notion_de_la_spatialite'];
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updateFields[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).json({ message: 'Aucun champ à modifier' });
+    }
+
+    const result = await db.collection('enfants').updateOne({ _id: id }, { $set: updateFields });
+    if (result.matchedCount === 0) return res.status(404).json({ message: 'Enfant non trouvé' });
+
+    const updated = await db.collection('enfants').findOne({ _id: id });
+    res.json(cleanDoc(updated));
+  } catch (error) {
+    console.error('Update enfant error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
+// DELETE /api/enfants/:id — supprimer un enfant
+app.delete('/api/enfants/:id', authenticateToken, async (req, res) => {
+  try {
+    const id = toObjectId(req.params.id);
+    if (!id) return res.status(400).json({ message: 'ID invalide' });
+
+    const db = mongoose.connection.db;
+    const enfant = await db.collection('enfants').findOne({ _id: id });
+    if (!enfant) return res.status(404).json({ message: 'Enfant non trouvé' });
+
+    // ✅ Vérification d'accès
+    const userId = req.user.userId;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+
+    if (user.role === 'Parent' && enfant.idParent?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+    if (user.role === 'Medecin' && enfant.idMedecin?.toString() !== userId) {
+      return res.status(403).json({ message: 'Accès refusé' });
+    }
+
+    const result = await db.collection('enfants').deleteOne({ _id: id });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Enfant non trouvé' });
+
+    res.json({ success: true, message: 'Enfant supprimé' });
+  } catch (error) {
+    console.error('Delete enfant error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
 // ====================== ACTIVITÉS ======================
 // Structure : { domaine, type, materiel_requis: [string], objectif, conseils, attention, duree, url }
 
@@ -1047,6 +1369,90 @@ app.post('/api/activites/migrate', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// GET /api/mes-patients — liste des patients du médecin connecté
+app.get('/api/mes-patients', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const db = mongoose.connection.db;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+    
+    if (user.role !== 'Medecin') {
+      return res.status(403).json({ message: 'Accès réservé aux médecins' });
+    }
+
+    const patients = await db.collection('enfants')
+      .find({ idMedecin: userId })
+      .sort({ nom: 1 })
+      .toArray();
+
+    const enriched = await Promise.all(patients.map(async (p) => {
+      let parentNom = null;
+      try {
+        const parent = await db.collection('utilisateurs').findOne(
+          { _id: toObjectId(p.idParent) }, { projection: { nom: 1, prenom: 1 } }
+        );
+        if (parent) parentNom = `${parent.prenom} ${parent.nom}`;
+      } catch {}
+      return { ...cleanDoc(p), parentNom };
+    }));
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Get mes patients error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
+// GET /api/tous-les-patients — liste de tous les patients (admin et médecin)
+app.get('/api/tous-les-patients', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const db = mongoose.connection.db;
+    const user = await db.collection('utilisateurs').findOne({ _id: toObjectId(userId) });
+    
+    // Seul le médecin peut voir tous les patients
+    if (user.role !== 'Medecin' && user.role !== 'admin') {
+      return res.status(403).json({ message: 'Accès réservé aux médecins et admin' });
+    }
+
+    const patients = await db.collection('enfants')
+      .find({})
+      .sort({ nom: 1 })
+      .toArray();
+
+    // Enrichir avec les infos du médecin et du parent
+    const enriched = await Promise.all(patients.map(async (p) => {
+      let medecinNom = null;
+      let parentNom = null;
+      
+      try {
+        if (p.idMedecin) {
+          const medecin = await db.collection('utilisateurs').findOne(
+            { _id: toObjectId(p.idMedecin) }, { projection: { nom: 1, prenom: 1 } }
+          );
+          if (medecin) medecinNom = `${medecin.prenom} ${medecin.nom}`;
+        }
+      } catch {}
+      
+      try {
+        if (p.idParent) {
+          const parent = await db.collection('utilisateurs').findOne(
+            { _id: toObjectId(p.idParent) }, { projection: { nom: 1, prenom: 1 } }
+          );
+          if (parent) parentNom = `${parent.prenom} ${parent.nom}`;
+        }
+      } catch {}
+      
+      return { ...cleanDoc(p), medecinNom, parentNom };
+    }));
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Get tous les patients error:', error);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+
 // ====================== DEBUG ======================
 app.get('/utilisateurs', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -1092,3 +1498,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  POST   /api/activites/migrate');
   console.log('  GET    /utilisateurs  (debug)\n');
 });
+
+
+
+

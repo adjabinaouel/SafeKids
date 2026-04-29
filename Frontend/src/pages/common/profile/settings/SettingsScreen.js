@@ -14,7 +14,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import ParentLayout from '../../../../components/Navigation/ParentNavigation';
 import S, { COLORS, IS_TABLET } from '../ProfileStyles';
 
-const SERVER_URL = 'https://unfailed-branden-healable.ngrok-free.dev';
+const SERVER_URL = 'https://gondola-reattach-relearn.ngrok-free.dev';
 
 const KEYS = {
   preferences:   'userPreferences',
